@@ -1,5 +1,6 @@
 import { Outlet } from '@tanstack/react-router'
 
+import { ComposeWindow } from '@/components/compose/compose-window'
 import { AppHeader } from '@/components/layout/app-header'
 import { AppSidebar } from '@/components/layout/app-sidebar'
 import { VerifyEmailBanner } from '@/components/layout/verify-email-banner'
@@ -23,6 +24,9 @@ export function AppLayout() {
           <Outlet />
         </main>
       </SidebarInset>
+
+      {/* One compose window, floating above whatever is on screen. */}
+      <ComposeWindow />
     </SidebarProvider>
   )
 }

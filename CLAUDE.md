@@ -16,7 +16,7 @@ built versus merely planned.
 
 ```
 apps/api/     Go module: cmd/server (HTTP API), cmd/worker (Asynq), cmd/migrate, internal/*, db/migrations
-apps/web/     React + TypeScript + Vite SPA
+apps/web/     React + TypeScript + Vite SPA (e2e/ holds the Playwright suite + stub provider)
 deploy/       Nginx config and production compose
 docs/PLAN.md  Product & architecture specification (authoritative)
 PROGRESS.md   Implementation tracker + decisions log
@@ -49,7 +49,9 @@ Go integration tests share one database and truncate it, so `make test-api` runs
 Running `go test ./...` directly makes packages delete each other's rows.
 
 **Local ports** are shifted away from the defaults because this machine already runs other
-stacks on 5432/6379/8080/5173: Postgres `5433`, Redis `6380`, API `8090`, web `5180`.
+stacks on 5432/6379/8080/5173: Postgres `5433`, Redis `6380`, API `8090`, worker health `8092`,
+web `5180`. The e2e stack uses its own: stub provider `8099`, API `8091`, worker health `8093`,
+web `5181`.
 
 Integration tests that need Postgres read `TEST_DATABASE_URL` and skip when it is unset, so
 `make infra` must be running for them to actually execute. A suite that reports `ok` having

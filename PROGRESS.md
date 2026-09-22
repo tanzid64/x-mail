@@ -3,7 +3,7 @@
 Live tracker for the plan in [`docs/PLAN.md`](docs/PLAN.md).
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
-**Current phase:** Phase 4 — Sending (Phases 1–3 complete)
+**Current phase:** Phase 5 — Receiving (Phases 1–4 complete)
 
 ---
 
@@ -68,16 +68,16 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
 ## Phase 4 — Sending
 
-- [ ] `drafts` table + draft CRUD API
-- [ ] Draft autosave (debounced)
-- [ ] Attachment storage abstraction (local + S3/R2)
-- [ ] Attachment upload/download API
-- [ ] Asynq queue + worker binary
-- [ ] `SendEmail` job (idempotent)
-- [ ] Resend send integration + status tracking
-- [ ] Retry/backoff + failure recording
-- [ ] Compose UI + TipTap editor
-- [ ] Reply / reply-all / forward
+- [x] `drafts` table + draft CRUD API
+- [x] Draft autosave (debounced)
+- [x] Attachment storage abstraction (local + S3/R2)
+- [x] Attachment upload/download API
+- [x] Asynq queue + worker binary
+- [x] `SendEmail` job (idempotent)
+- [x] Resend send integration + status tracking
+- [x] Retry/backoff + failure recording
+- [x] Compose UI + TipTap editor
+- [x] Reply / reply-all / forward
 
 ## Phase 5 — Receiving
 
@@ -143,7 +143,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] Account isolation tests
 - [x] Authorization tests
 - [ ] Webhook idempotency tests
-- [ ] Worker retry/idempotency tests
+- [x] Worker retry/idempotency tests
 - [~] HTML sanitization of inbound mail — rendered in a sandboxed frame; server-side sanitising lands with inbound mail
 - [ ] Observability (metrics, tracing)
 - [ ] Abuse prevention / sending limits
@@ -180,3 +180,9 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 23 | Email HTML renders in an iframe with `allow-same-origin allow-popups` and no `allow-scripts` | Scripts off is what neutralises the content; same-origin is only so the frame can be measured and sized. Granting it *with* scripts would defeat the sandbox, which is why scripts stay off |
 | 24 | `cmd/seed` fills a mailbox with sample conversations | Inbound mail does not arrive until Phase 5; without it the mailbox UI could not be exercised or tested at all |
 | 25 | e2e truncates its database in globalSetup | Globally-unique rows (mail addresses) collided with leftovers, so a suite that passed once began failing for reasons unrelated to the change |
+| 26 | Drafts live in their own table, not as messages | Autosave writes many times a minute; keeping drafts out of the mailbox tables stops that churning thread aggregates, and a half-typed row can never be reached by the sending path |
+| 27 | Duplicate sends blocked at three layers | Claiming a draft is conditional on it still being a draft; the Asynq task id is the message id; the provider idempotency key is generated once and reused. The third is the only one that covers a worker dying after the provider accepted the message |
+| 28 | Send failures acted on by kind | Throttling and outages are retried; a rejected key or unverified domain is recorded as permanently failed with a reason, since retrying those only delays telling the user |
+| 29 | Attachments re-pointed from draft to message, never copied | The bytes are already in object storage; copying them would double storage for every send |
+| 30 | Attachment downloads are always octet-stream with nosniff | An HTML or SVG attachment rendered inline would execute as a page on our origin |
+| 31 | Worker exposes /healthz and /readyz | A worker that cannot be probed cannot be orchestrated; it also gives the e2e stack a readiness signal |

@@ -36,7 +36,11 @@ export function MessageBody({ html, text }: MessageBodyProps) {
   const measure = useCallback(() => {
     const body = frameRef.current?.contentDocument?.body
     if (!body) return
-    setHeight(Math.min(Math.max(body.scrollHeight + 24, 48), MAX_HEIGHT))
+    const next = Math.min(Math.max(body.scrollHeight + 24, 48), MAX_HEIGHT)
+    // Resizing the frame changes what the observer is watching, so a naive
+    // update feeds straight back into another measurement. Ignoring sub-pixel
+    // churn breaks that loop.
+    setHeight((current) => (Math.abs(current - next) > 2 ? next : current))
   }, [])
 
   useEffect(() => {
@@ -46,14 +50,23 @@ export function MessageBody({ html, text }: MessageBodyProps) {
 
     frame.addEventListener('load', measure)
 
-    // Images and web fonts land after load, each changing the height.
+    // Images and web fonts land after load, each changing the height. The
+    // callback is deferred to the next frame so the observer is never still
+    // running when the resize it caused is applied.
     const body = frame.contentDocument?.body
-    const observer = body ? new ResizeObserver(measure) : null
+    let pending = 0
+    const observer = body
+      ? new ResizeObserver(() => {
+          window.cancelAnimationFrame(pending)
+          pending = window.requestAnimationFrame(measure)
+        })
+      : null
     if (body && observer) observer.observe(body)
 
     return () => {
       frame.removeEventListener('load', measure)
       observer?.disconnect()
+      window.cancelAnimationFrame(pending)
     }
   }, [trimmed, measure])
 

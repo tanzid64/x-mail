@@ -1,6 +1,7 @@
 import { useParams } from '@tanstack/react-router'
 
 import { EmailList } from '@/components/mail/email-list'
+import { DraftsPage } from '@/routes/drafts'
 import { folderBySlug } from '@/lib/folders'
 
 /** Empty-state copy per folder, so the message fits where you are. */
@@ -18,6 +19,9 @@ const EMPTY_MESSAGES: Record<string, string> = {
 export function MailboxPage() {
   const { folder: slug } = useParams({ from: '/_app/$folder' })
   const folder = folderBySlug(slug)
+
+  // Drafts are not threads, so that folder has its own list.
+  if (slug === 'drafts') return <DraftsPage />
 
   if (!folder) {
     return (

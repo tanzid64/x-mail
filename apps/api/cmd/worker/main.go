@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/dark/x-mail/api/internal/accounts"
 	"github.com/dark/x-mail/api/internal/compose"
@@ -78,6 +79,13 @@ func run() error {
 		logger,
 	)
 
+	// Liveness and readiness, so the worker can be probed like any other process.
+	var health *worker.HealthServer
+	if cfg.WorkerHTTPAddr != "" {
+		health = worker.NewHealthServer(cfg.WorkerHTTPAddr, pool, rdb, logger)
+		health.Start()
+	}
+
 	server := worker.New(worker.Deps{
 		Redis:  worker.RedisOpt(rdb),
 		Logger: logger,
@@ -97,6 +105,11 @@ func run() error {
 		logger.Info("shutdown signal received, finishing in-flight jobs")
 		// Shutdown waits for running jobs, so a deploy cannot cut a send in half.
 		server.Shutdown()
+		if health != nil {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			health.Shutdown(shutdownCtx)
+		}
 		return nil
 	}
 }

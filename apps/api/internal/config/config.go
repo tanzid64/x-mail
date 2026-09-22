@@ -15,10 +15,12 @@ import (
 )
 
 type Config struct {
-	Env         string
-	HTTPAddr    string
-	CORSOrigins []string
-	AppBaseURL  string
+	Env      string
+	HTTPAddr string
+	// WorkerHTTPAddr serves the worker's health endpoint. Empty disables it.
+	WorkerHTTPAddr string
+	CORSOrigins    []string
+	AppBaseURL     string
 
 	DatabaseURL string
 
@@ -75,10 +77,11 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Env:         def("APP_ENV", "development"),
-		HTTPAddr:    def("HTTP_ADDR", ":8090"),
-		CORSOrigins: splitList(def("CORS_ORIGINS", "http://localhost:5180")),
-		AppBaseURL:  def("APP_BASE_URL", "http://localhost:5180"),
+		Env:            def("APP_ENV", "development"),
+		HTTPAddr:       def("HTTP_ADDR", ":8090"),
+		WorkerHTTPAddr: def("WORKER_HTTP_ADDR", ":8092"),
+		CORSOrigins:    splitList(def("CORS_ORIGINS", "http://localhost:5180")),
+		AppBaseURL:     def("APP_BASE_URL", "http://localhost:5180"),
 
 		DatabaseURL: req("DATABASE_URL"),
 

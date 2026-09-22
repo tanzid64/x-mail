@@ -17,6 +17,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { useStartCompose } from '@/features/compose/use-start-compose'
 import { useFolderCounts } from '@/features/mailbox/api'
 import { FOLDERS } from '@/lib/folders'
 import { useUIStore } from '@/stores/ui'
@@ -35,6 +36,7 @@ export function AppSidebar() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const account = useUIStore((state) => state.activeAccount)
   const { data: counts } = useFolderCounts(account)
+  const { start, canCompose, isPending } = useStartCompose()
 
   return (
     <Sidebar>
@@ -48,8 +50,13 @@ export function AppSidebar() {
 
         <AccountSwitcher />
 
-        {/* Compose is wired up in the sending phase. */}
-        <Button className="justify-start gap-2" disabled>
+        <Button
+          className="justify-start gap-2"
+          // Composing needs somewhere to send from.
+          disabled={!canCompose || isPending}
+          title={canCompose ? undefined : 'Connect a mail account first'}
+          onClick={() => void start()}
+        >
           <PenSquare className="size-4" />
           Compose
         </Button>

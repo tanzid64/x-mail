@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 
 import { MessageBody } from '@/components/mail/message-body'
+import { SendStatus } from '@/components/mail/send-status'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import type { Message } from '@/features/mailbox/types'
 import { displayName, formatFullDate, formatMailDate, initialsFor } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -45,7 +45,7 @@ export function MessageCard({ message, defaultOpen }: MessageCardProps) {
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium">{sender}</span>
             <span className="text-sm text-muted-foreground">{message.sender_email}</span>
-            {message.direction === 'outbound' ? <Badge variant="outline">Sent</Badge> : null}
+            <SendStatus message={message} />
           </div>
 
           {open ? (
