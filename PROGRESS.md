@@ -3,7 +3,7 @@
 Live tracker for the plan in [`docs/PLAN.md`](docs/PLAN.md).
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
-**Current phase:** Phase 1 — Foundation (auth next)
+**Current phase:** Phase 1 — Foundation (backend auth done; frontend next)
 
 ---
 
@@ -26,13 +26,13 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] Migration tooling + `db/migrations`
 - [x] Redis connection
 - [x] `users` + `sessions` + `password_resets` + `email_verifications` tables
-- [ ] Argon2id password hashing
-- [ ] Register / Login / Logout
-- [ ] Session middleware (httpOnly cookie)
-- [ ] `GET /api/v1/me`, `PATCH /api/v1/me`
-- [ ] Forgot password / reset password
-- [ ] Email verification
-- [ ] Rate limiting (IP + endpoint)
+- [x] Argon2id password hashing
+- [x] Register / Login / Logout
+- [x] Session middleware (httpOnly cookie)
+- [x] `GET /api/v1/me`, `PATCH /api/v1/me`
+- [x] Forgot password / reset password
+- [x] Email verification
+- [x] Rate limiting (IP + endpoint)
 - [ ] React + Vite + TS + Tailwind + shadcn/ui
 - [ ] TanStack Router + TanStack Query + Zustand
 - [ ] API client + auth guard
@@ -140,7 +140,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 ## Cross-cutting (tracked continuously)
 
 - [ ] Account isolation tests
-- [ ] Authorization tests
+- [~] Authorization tests — auth/session coverage in place; account isolation lands with Phase 2
 - [ ] Webhook idempotency tests
 - [ ] Worker retry/idempotency tests
 - [ ] HTML sanitization of inbound mail
@@ -160,3 +160,6 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 4 | Hand-rolled embedded migrator instead of goose | The goose CLI pulls every DB driver (ClickHouse, Azure, …) into go.mod; we need ~120 lines and Postgres only |
 | 5 | Ports shifted: pg 5433, redis 6380, api 8090, web 5180 | 5432/6379/8080/5173 are already taken by other stacks on this machine |
 | 6 | API applies pending migrations at startup | Keeps a deployed container in sync with its code; advisory lock makes api+worker startup safe |
+| 7 | Session tokens stored as SHA-256, passwords as Argon2id | Tokens are full-entropy random values with nothing to brute force; paying a slow-hash cost per authenticated request would be waste |
+| 8 | Password reset revokes all sessions; password change keeps only the current one | A reset may be driven by an attacker who already holds a session; a voluntary change should not log you out of the tab you are in |
+| 9 | Integration tests skip without `TEST_DATABASE_URL` | `go test ./...` stays green with no infra, while `make infra` turns the same tests into real end-to-end coverage |

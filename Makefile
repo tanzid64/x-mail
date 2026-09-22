@@ -19,6 +19,9 @@ help:
 infra:
 	docker compose up -d postgres redis
 	@docker compose exec -T postgres sh -c 'until pg_isready -U xmail -d xmail -q; do sleep 0.5; done' && echo "postgres ready"
+	@docker compose exec -T postgres psql -U xmail -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='xmail_test'" \
+		| grep -q 1 || docker compose exec -T postgres createdb -U xmail xmail_test
+	@echo "test database ready"
 
 ## infra-down: stop infra (keeps volumes)
 infra-down:
@@ -96,3 +99,7 @@ build:
 .PHONY: help infra infra-down infra-reset dev docker-up api worker web \
         migrate-up migrate-down migrate-status migrate-new psql \
         test test-api test-web lint build
+
+## test-api-v: verbose backend tests
+test-api-v:
+	cd $(API_DIR) && go test ./... -v -count=1

@@ -14,8 +14,11 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/dark/x-mail/api/internal/auth"
 	"github.com/dark/x-mail/api/internal/config"
 	"github.com/dark/x-mail/api/internal/httpx"
+	"github.com/dark/x-mail/api/internal/mailer"
+	"github.com/dark/x-mail/api/internal/ratelimit"
 	"github.com/dark/x-mail/api/internal/server/middleware"
 )
 
@@ -27,12 +30,39 @@ type Deps struct {
 }
 
 type Server struct {
-	deps   Deps
-	router chi.Router
+	deps    Deps
+	router  chi.Router
+	limiter *ratelimit.Limiter
+	auth    *auth.Handler
 }
 
 func New(deps Deps) *Server {
-	s := &Server{deps: deps, router: chi.NewRouter()}
+	cfg := deps.Config
+
+	limiter := ratelimit.New(deps.Redis, deps.Logger)
+
+	authHandler := auth.NewHandler(
+		auth.NewService(
+			auth.NewRepository(deps.DB),
+			mailer.New(cfg.SystemResendAPIKey, cfg.SystemMailFrom, deps.Logger),
+			auth.Options{SessionTTL: cfg.SessionTTL, AppBaseURL: cfg.AppBaseURL},
+			deps.Logger,
+		),
+		auth.Cookies{
+			Name:   cfg.SessionCookieName,
+			Secure: cfg.SessionCookieSecure,
+			TTL:    cfg.SessionTTL,
+		},
+		limiter,
+		deps.Logger,
+	)
+
+	s := &Server{
+		deps:    deps,
+		router:  chi.NewRouter(),
+		limiter: limiter,
+		auth:    authHandler,
+	}
 	s.setupMiddleware()
 	s.setupRoutes()
 	return s
@@ -66,6 +96,13 @@ func (s *Server) setupRoutes() {
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, _ *http.Request) {
 			httpx.JSON(w, http.StatusOK, map[string]string{"message": "pong"})
+		})
+
+		r.Route("/auth", s.auth.RoutesPublic)
+
+		r.Route("/me", func(r chi.Router) {
+			r.Use(s.auth.RequireAuth)
+			s.auth.RoutesMe(r)
 		})
 	})
 
