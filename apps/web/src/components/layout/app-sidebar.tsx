@@ -8,6 +8,7 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
+  SidebarMenuBadge,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -16,10 +17,24 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar'
+import { useFolderCounts } from '@/features/mailbox/api'
 import { FOLDERS } from '@/lib/folders'
+import { useUIStore } from '@/stores/ui'
+
+/** Sidebar folders read their badge from the system label the API counts by. */
+const FOLDER_COUNT_KEYS: Record<string, string> = {
+  inbox: 'INBOX',
+  sent: 'SENT',
+  drafts: 'DRAFT',
+  archive: 'ARCHIVE',
+  spam: 'SPAM',
+  trash: 'TRASH',
+}
 
 export function AppSidebar() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const account = useUIStore((state) => state.activeAccount)
+  const { data: counts } = useFolderCounts(account)
 
   return (
     <Sidebar>
@@ -45,16 +60,20 @@ export function AppSidebar() {
           <SidebarGroupLabel>Mailbox</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {FOLDERS.map((folder) => (
-                <SidebarMenuItem key={folder.slug}>
-                  <SidebarMenuButton asChild isActive={pathname === `/${folder.slug}`}>
-                    <Link to="/$folder" params={{ folder: folder.slug }}>
-                      <folder.icon className="size-4" />
-                      <span>{folder.label}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
+              {FOLDERS.map((folder) => {
+                const unread = counts?.[FOLDER_COUNT_KEYS[folder.slug] ?? ''] ?? 0
+                return (
+                  <SidebarMenuItem key={folder.slug}>
+                    <SidebarMenuButton asChild isActive={pathname === `/${folder.slug}`}>
+                      <Link to="/$folder" params={{ folder: folder.slug }}>
+                        <folder.icon className="size-4" />
+                        <span>{folder.label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                    {unread > 0 ? <SidebarMenuBadge>{unread}</SidebarMenuBadge> : null}
+                  </SidebarMenuItem>
+                )
+              })}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

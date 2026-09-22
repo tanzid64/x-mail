@@ -16,6 +16,7 @@ const E2E_DATABASE_URL =
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
   fullyParallel: false,
   workers: 1,
   reporter: [['list']],

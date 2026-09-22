@@ -1,14 +1,13 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import path from 'node:path'
 
 const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8090'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
+    alias: { '@': new URL('./src', import.meta.url).pathname },
   },
   server: {
     // The end-to-end suite runs its own isolated stack on different ports, so

@@ -17,6 +17,7 @@ import { ResetPasswordPage } from '@/routes/reset-password'
 import { SettingsAccountDetailPage } from '@/routes/settings/account-detail'
 import { SettingsAccountsPage } from '@/routes/settings/accounts'
 import { SettingsLayout } from '@/routes/settings/settings-layout'
+import { ThreadPage } from '@/routes/thread'
 import { VerifyEmailPage } from '@/routes/verify-email'
 
 interface RouterContext {
@@ -109,6 +110,12 @@ const folderRoute = createRoute({
   component: MailboxPage,
 })
 
+const threadRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/thread/$threadId',
+  component: ThreadPage,
+})
+
 const settingsRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/settings',
@@ -151,6 +158,7 @@ const routeTree = rootRoute.addChildren([
   resetPasswordRoute,
   verifyEmailRoute,
   appLayoutRoute.addChildren([
+    threadRoute,
     folderRoute,
     settingsRoute.addChildren([settingsIndexRoute, settingsAccountsRoute, settingsAccountDetailRoute]),
   ]),

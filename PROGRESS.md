@@ -3,7 +3,7 @@
 Live tracker for the plan in [`docs/PLAN.md`](docs/PLAN.md).
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
-**Current phase:** Phase 3 — Mailbox MVP (Phases 1–2 complete)
+**Current phase:** Phase 4 — Sending (Phases 1–3 complete)
 
 ---
 
@@ -55,16 +55,16 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
 ## Phase 3 — Mailbox MVP
 
-- [ ] `threads`, `messages`, `message_recipients`, `labels`, `message_labels` tables
-- [ ] System label bootstrap per mail account
-- [ ] Thread list API (pagination + folder filter)
-- [ ] Thread detail API
-- [ ] Read/unread, star, important
-- [ ] Archive / delete / spam / trash
-- [ ] Bulk actions
-- [ ] Inbox UI (list + rows + toolbar)
-- [ ] Thread view UI
-- [ ] Folder routes (inbox/starred/sent/drafts/spam/trash)
+- [x] `threads`, `messages`, `message_recipients`, `labels`, `message_labels` tables
+- [x] System label bootstrap per mail account
+- [x] Thread list API (pagination + folder filter)
+- [x] Thread detail API
+- [x] Read/unread, star, important
+- [x] Archive / delete / spam / trash
+- [x] Bulk actions
+- [x] Inbox UI (list + rows + toolbar)
+- [x] Thread view UI
+- [x] Folder routes (inbox/starred/sent/drafts/spam/trash)
 
 ## Phase 4 — Sending
 
@@ -100,7 +100,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
 ## Phase 7 — Gmail Features
 
-- [ ] Custom labels CRUD + UI
+- [~] Custom labels CRUD + UI — API done, label management screens pending
 - [ ] PostgreSQL FTS search + query operators
 - [ ] Contacts (auto-build + CRUD + autocomplete)
 - [ ] Snooze + wake worker
@@ -144,7 +144,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] Authorization tests
 - [ ] Webhook idempotency tests
 - [ ] Worker retry/idempotency tests
-- [ ] HTML sanitization of inbound mail
+- [~] HTML sanitization of inbound mail — rendered in a sandboxed frame; server-side sanitising lands with inbound mail
 - [ ] Observability (metrics, tracing)
 - [ ] Abuse prevention / sending limits
 - [ ] Nginx + production Docker setup
@@ -174,3 +174,9 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 17 | Credentials verified against the provider before being stored | A bad key is reported at the form rather than at the user's first send, days later |
 | 18 | `RATE_LIMIT_SCALE` and `RESEND_BASE_URL` env overrides, both rejected in production | Lets the e2e suite run a stub provider and register many users from one IP, without weakening the deployed system |
 | 19 | e2e runs its own stack: ports 8099/8091/5181 and the xmail_e2e database | Can run alongside `make dev` without either disturbing the other, and never touches the Go tests' database |
+| 20 | Placement uses system labels; read/starred/important stay columns | A message can sit in a folder and carry user labels at once; the three flags are per-message booleans that would gain nothing from the label machinery |
+| 21 | `refresh_thread()` in SQL is the only definition of a thread summary | Called in the same transaction as the change that made it stale, so two code paths cannot compute counters differently |
+| 22 | Thread lists paginate by cursor, not offset | A mailbox changes under the reader; an offset silently skips or repeats rows as mail arrives |
+| 23 | Email HTML renders in an iframe with `allow-same-origin allow-popups` and no `allow-scripts` | Scripts off is what neutralises the content; same-origin is only so the frame can be measured and sized. Granting it *with* scripts would defeat the sandbox, which is why scripts stay off |
+| 24 | `cmd/seed` fills a mailbox with sample conversations | Inbound mail does not arrive until Phase 5; without it the mailbox UI could not be exercised or tested at all |
+| 25 | e2e truncates its database in globalSetup | Globally-unique rows (mail addresses) collided with leftovers, so a suite that passed once began failing for reasons unrelated to the change |

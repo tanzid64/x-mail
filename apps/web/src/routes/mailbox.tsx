@@ -1,13 +1,20 @@
 import { useParams } from '@tanstack/react-router'
 
+import { EmailList } from '@/components/mail/email-list'
 import { folderBySlug } from '@/lib/folders'
 
-/**
- * Placeholder mailbox view.
- *
- * Routing, the shell and the folder list are real; the thread list itself
- * arrives with the mailbox phase, once threads and messages exist server-side.
- */
+/** Empty-state copy per folder, so the message fits where you are. */
+const EMPTY_MESSAGES: Record<string, string> = {
+  inbox: 'New mail will appear here once an account is connected and receiving.',
+  starred: 'Star a conversation to keep it here.',
+  snoozed: 'Snoozed conversations come back here at the time you choose.',
+  sent: 'Messages you send will appear here.',
+  drafts: 'Drafts you start will be saved here automatically.',
+  archive: 'Archived conversations are kept here, out of the inbox.',
+  spam: 'Mail marked as spam lands here.',
+  trash: 'Deleted conversations stay here until you remove them for good.',
+}
+
 export function MailboxPage() {
   const { folder: slug } = useParams({ from: '/_app/$folder' })
   const folder = folderBySlug(slug)
@@ -23,18 +30,16 @@ export function MailboxPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b px-6 py-4">
+      <div className="flex items-center gap-2 border-b px-4 py-3">
         <folder.icon className="size-4 text-muted-foreground" />
-        <h1 className="text-lg font-semibold">{folder.label}</h1>
+        <h1 className="font-semibold">{folder.label}</h1>
       </div>
 
-      <div className="flex flex-1 items-center justify-center p-10">
-        <div className="max-w-sm text-center">
-          <p className="text-sm font-medium">No messages yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Connect a mail account to start sending and receiving from this mailbox.
-          </p>
-        </div>
+      <div className="min-h-0 flex-1">
+        <EmailList
+          folder={folder.slug}
+          emptyMessage={EMPTY_MESSAGES[folder.slug] ?? 'Nothing to show here yet.'}
+        />
       </div>
     </div>
   )
