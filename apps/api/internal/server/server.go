@@ -25,6 +25,7 @@ import (
 	"github.com/dark/x-mail/api/internal/ratelimit"
 	"github.com/dark/x-mail/api/internal/server/middleware"
 	"github.com/dark/x-mail/api/internal/storage"
+	"github.com/dark/x-mail/api/internal/webhooks"
 	"github.com/dark/x-mail/api/internal/worker"
 )
 
@@ -52,6 +53,7 @@ type Server struct {
 	accounts *accounts.Handler
 	mailbox  *mailbox.Handler
 	compose  *compose.Handler
+	webhooks *webhooks.Handler
 }
 
 // New wires the dependency graph and returns a ready router.
@@ -129,6 +131,21 @@ func New(deps Deps) (*Server, error) {
 		deps.Logger,
 	)
 
+	// The webhook enqueuer is the same client the compose service uses, but
+	// typed for the event task.
+	eventQueue, ok := queue.(webhooks.Queue)
+	if !ok {
+		eventQueue = worker.NewEnqueuer(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	}
+
+	webhooksHandler := webhooks.NewHandler(
+		webhooks.NewRepository(deps.DB),
+		sealer,
+		cfg.ResendWebhookSecret,
+		eventQueue,
+		deps.Logger,
+	)
+
 	s := &Server{
 		deps:     deps,
 		router:   chi.NewRouter(),
@@ -137,6 +154,7 @@ func New(deps Deps) (*Server, error) {
 		accounts: accountsHandler,
 		mailbox:  mailboxHandler,
 		compose:  composeHandler,
+		webhooks: webhooksHandler,
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -174,6 +192,10 @@ func (s *Server) setupRoutes() {
 		})
 
 		r.Route("/auth", s.auth.RoutesPublic)
+
+		// Provider callbacks carry no session; the request signature is what
+		// authenticates them, so they sit outside the auth middleware.
+		r.Route("/webhooks", s.webhooks.Routes)
 
 		r.Route("/me", func(r chi.Router) {
 			r.Use(s.auth.RequireAuth)

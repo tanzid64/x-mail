@@ -34,6 +34,7 @@ func (h *Handler) RoutesAccounts(r chi.Router) {
 	r.Post("/{id}/api-key", h.handleRotateAPIKey)
 	r.Post("/{id}/check", h.handleCheckCredentials)
 	r.Post("/{id}/sync-domains", h.handleSyncDomains)
+	r.Post("/{id}/webhook-secret", h.handleSetWebhookSecret)
 }
 
 // RoutesDomains mounts /domains.
@@ -229,6 +230,39 @@ func (h *Handler) handleRotateAPIKey(w http.ResponseWriter, r *http.Request) {
 	account, err := h.service.RotateAPIKey(r.Context(), user.ID, accountID, req.APIKey)
 	if err != nil {
 		httpx.Fail(w, r, h.mapError(err, "api_key"))
+		return
+	}
+	httpx.JSON(w, http.StatusOK, map[string]any{"mail_account": account})
+}
+
+type webhookSecretRequest struct {
+	Secret string `json:"secret"`
+}
+
+// handleSetWebhookSecret stores the provider's signing secret for this account.
+func (h *Handler) handleSetWebhookSecret(w http.ResponseWriter, r *http.Request) {
+	user, accountID, err := h.userAndID(r)
+	if err != nil {
+		httpx.Fail(w, r, err)
+		return
+	}
+
+	var req webhookSecretRequest
+	if err := httpx.Decode(w, r, &req); err != nil {
+		httpx.Fail(w, r, err)
+		return
+	}
+
+	v := validate.New()
+	v.MaxLen("secret", req.Secret, 512)
+	if err := v.Err(); err != nil {
+		httpx.Fail(w, r, err)
+		return
+	}
+
+	account, err := h.service.SetWebhookSecret(r.Context(), user.ID, accountID, req.Secret)
+	if err != nil {
+		httpx.Fail(w, r, h.mapError(err, "secret"))
 		return
 	}
 	httpx.JSON(w, http.StatusOK, map[string]any{"mail_account": account})

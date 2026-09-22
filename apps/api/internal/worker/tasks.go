@@ -17,7 +17,8 @@ import (
 // Task type names. These are persisted in Redis, so renaming one strands the
 // jobs already queued under the old name.
 const (
-	TaskSendEmail = "email:send"
+	TaskSendEmail    = "email:send"
+	TaskProcessEvent = "email:process_event"
 )
 
 // Queue names, highest priority first.
@@ -25,6 +26,32 @@ const (
 	QueueCritical = "critical"
 	QueueDefault  = "default"
 )
+
+// ProcessEventPayload identifies the recorded provider event to act on.
+type ProcessEventPayload struct {
+	EventID uuid.UUID `json:"event_id"`
+}
+
+// NewProcessEventTask builds the task for a recorded webhook.
+//
+// Like sending, the task id is derived from the row id, so a webhook that
+// somehow reaches the endpoint twice cannot become two jobs.
+func NewProcessEventTask(eventID uuid.UUID) (*asynq.Task, []asynq.Option, error) {
+	payload, err := json.Marshal(ProcessEventPayload{EventID: eventID})
+	if err != nil {
+		return nil, nil, fmt.Errorf("worker: encode event payload: %w", err)
+	}
+
+	options := []asynq.Option{
+		// Inbound mail is what a user is waiting to see, same as outbound.
+		asynq.Queue(QueueCritical),
+		asynq.TaskID(fmt.Sprintf("event:%s", eventID)),
+		asynq.MaxRetry(5),
+		asynq.Timeout(2 * time.Minute),
+		asynq.Retention(24 * time.Hour),
+	}
+	return asynq.NewTask(TaskProcessEvent, payload), options, nil
+}
 
 // SendEmailPayload identifies the message to send.
 //

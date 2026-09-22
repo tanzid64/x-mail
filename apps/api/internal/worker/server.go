@@ -10,9 +10,10 @@ import (
 
 // Deps is everything the job handlers need.
 type Deps struct {
-	Redis     asynq.RedisClientOpt
-	Logger    *slog.Logger
-	SendEmail *SendEmailHandler
+	Redis        asynq.RedisClientOpt
+	Logger       *slog.Logger
+	SendEmail    *SendEmailHandler
+	ProcessEvent *ProcessEventHandler
 	// Concurrency caps how many jobs run at once. Sending is bounded by the
 	// provider's rate limits rather than by local CPU, so this is deliberately
 	// modest.
@@ -49,13 +50,14 @@ func New(deps Deps) *Server {
 
 	mux := asynq.NewServeMux()
 	mux.Handle(TaskSendEmail, deps.SendEmail)
+	mux.Handle(TaskProcessEvent, deps.ProcessEvent)
 
 	return &Server{server: server, mux: mux, logger: deps.Logger}
 }
 
 // Run blocks until Shutdown is called.
 func (s *Server) Run() error {
-	s.logger.Info("worker started", "jobs", []string{TaskSendEmail})
+	s.logger.Info("worker started", "jobs", []string{TaskSendEmail, TaskProcessEvent})
 	if err := s.server.Run(s.mux); err != nil {
 		return fmt.Errorf("worker: %w", err)
 	}

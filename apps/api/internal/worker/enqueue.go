@@ -50,6 +50,22 @@ func (e *Enqueuer) EnqueueSendEmail(ctx context.Context, messageID uuid.UUID) er
 	return nil
 }
 
+// EnqueueProcessEvent queues a recorded provider webhook for processing.
+func (e *Enqueuer) EnqueueProcessEvent(ctx context.Context, eventID uuid.UUID) error {
+	task, options, err := NewProcessEventTask(eventID)
+	if err != nil {
+		return err
+	}
+
+	if _, err := e.client.EnqueueContext(ctx, task, options...); err != nil {
+		if errors.Is(err, asynq.ErrTaskIDConflict) {
+			return nil
+		}
+		return fmt.Errorf("worker: enqueue event %s: %w", eventID, err)
+	}
+	return nil
+}
+
 // RedisOpt builds the Asynq connection options from the application's Redis
 // settings, so the worker and the API cannot drift apart.
 func RedisOpt(client *redis.Client) asynq.RedisClientOpt {

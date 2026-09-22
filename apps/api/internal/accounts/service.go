@@ -174,6 +174,22 @@ func (s *Service) RotateAPIKey(ctx context.Context, userID, accountID uuid.UUID,
 	return s.repo.RotateAPIKey(ctx, userID, accountID, sealed, crypto.Hint(apiKey))
 }
 
+// SetWebhookSecret stores the signing secret used to verify this account's
+// provider callbacks.
+func (s *Service) SetWebhookSecret(ctx context.Context, userID, accountID uuid.UUID, secret string) (*MailAccount, error) {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		// Clearing it falls the account back to the deployment-wide secret.
+		return s.repo.SetWebhookSecret(ctx, userID, accountID, nil, "")
+	}
+
+	sealed, err := s.sealer.Seal(secret)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.SetWebhookSecret(ctx, userID, accountID, sealed, crypto.Hint(secret))
+}
+
 // CheckCredentials re-tests a stored credential and records the outcome, so the
 // settings screen can show an account whose key has been revoked.
 func (s *Service) CheckCredentials(ctx context.Context, userID, accountID uuid.UUID) (*MailAccount, error) {

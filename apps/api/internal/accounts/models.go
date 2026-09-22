@@ -28,14 +28,17 @@ type MailAccount struct {
 	Provider          providers.Provider `json:"provider"`
 	ProviderAccountID *string            `json:"provider_account_id"`
 	APIKeyHint        string             `json:"api_key_hint"`
-	Status            string             `json:"status"`
-	StatusMessage     string             `json:"status_message"`
-	LastCheckedAt     *time.Time         `json:"last_checked_at"`
-	Color             string             `json:"color"`
-	IsDefault         bool               `json:"is_default"`
-	IsActive          bool               `json:"is_active"`
-	CreatedAt         time.Time          `json:"created_at"`
-	UpdatedAt         time.Time          `json:"updated_at"`
+	// WebhookSecretHint is the masked signing secret; like the API key, the
+	// secret itself never leaves the server.
+	WebhookSecretHint string     `json:"webhook_secret_hint"`
+	Status            string     `json:"status"`
+	StatusMessage     string     `json:"status_message"`
+	LastCheckedAt     *time.Time `json:"last_checked_at"`
+	Color             string     `json:"color"`
+	IsDefault         bool       `json:"is_default"`
+	IsActive          bool       `json:"is_active"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 // Domain is a sending domain belonging to a mail account.

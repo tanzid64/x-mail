@@ -30,13 +30,14 @@ type Repository struct {
 func NewRepository(db *pgxpool.Pool) *Repository { return &Repository{db: db} }
 
 const accountColumns = `id, user_id, name, provider, provider_account_id, api_key_hint,
-	status, status_message, last_checked_at, color, is_default, is_active, created_at, updated_at`
+	webhook_secret_hint, status, status_message, last_checked_at, color, is_default, is_active,
+	created_at, updated_at`
 
 func scanAccount(row pgx.Row) (*MailAccount, error) {
 	var a MailAccount
 	err := row.Scan(&a.ID, &a.UserID, &a.Name, &a.Provider, &a.ProviderAccountID, &a.APIKeyHint,
-		&a.Status, &a.StatusMessage, &a.LastCheckedAt, &a.Color, &a.IsDefault, &a.IsActive,
-		&a.CreatedAt, &a.UpdatedAt)
+		&a.WebhookSecretHint, &a.Status, &a.StatusMessage, &a.LastCheckedAt, &a.Color,
+		&a.IsDefault, &a.IsActive, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -223,6 +224,17 @@ func (r *Repository) RotateAPIKey(ctx context.Context, userID, accountID uuid.UU
 		`UPDATE mail_accounts
 		    SET api_key_encrypted = $3, api_key_hint = $4,
 		        status = '`+StatusActive+`', status_message = '', last_checked_at = now()
+		  WHERE id = $1 AND user_id = $2
+		  RETURNING `+accountColumns,
+		accountID, userID, sealed, hint))
+}
+
+// SetWebhookSecret stores the signing secret for an account's provider
+// callbacks, encrypted with the same master key as the API key — a webhook
+// secret is equally capable of letting an attacker inject mail.
+func (r *Repository) SetWebhookSecret(ctx context.Context, userID, accountID uuid.UUID, sealed []byte, hint string) (*MailAccount, error) {
+	return scanAccount(r.db.QueryRow(ctx,
+		`UPDATE mail_accounts SET webhook_secret_encrypted = $3, webhook_secret_hint = $4
 		  WHERE id = $1 AND user_id = $2
 		  RETURNING `+accountColumns,
 		accountID, userID, sealed, hint))

@@ -17,8 +17,10 @@ import (
 	"github.com/dark/x-mail/api/internal/crypto"
 	"github.com/dark/x-mail/api/internal/database"
 	"github.com/dark/x-mail/api/internal/logging"
+	"github.com/dark/x-mail/api/internal/mailbox"
 	"github.com/dark/x-mail/api/internal/redisx"
 	"github.com/dark/x-mail/api/internal/storage"
+	"github.com/dark/x-mail/api/internal/webhooks"
 	"github.com/dark/x-mail/api/internal/worker"
 )
 
@@ -91,6 +93,13 @@ func run() error {
 		Logger: logger,
 		SendEmail: worker.NewSendEmailHandler(
 			compose.NewRepository(pool), accountsService, store, logger,
+		),
+		ProcessEvent: worker.NewProcessEventHandler(
+			webhooks.NewRepository(pool),
+			mailbox.NewRepository(pool),
+			accounts.NewRepository(pool),
+			store,
+			logger,
 		),
 	})
 
