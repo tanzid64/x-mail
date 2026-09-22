@@ -19,9 +19,12 @@ help:
 infra:
 	docker compose up -d postgres redis
 	@docker compose exec -T postgres sh -c 'until pg_isready -U xmail -d xmail -q; do sleep 0.5; done' && echo "postgres ready"
-	@docker compose exec -T postgres psql -U xmail -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='xmail_test'" \
-		| grep -q 1 || docker compose exec -T postgres createdb -U xmail xmail_test
-	@echo "test database ready"
+	@for db in xmail_test xmail_e2e; do \
+		docker compose exec -T postgres psql -U xmail -d postgres -tAc \
+			"SELECT 1 FROM pg_database WHERE datname='$$db'" | grep -q 1 \
+			|| docker compose exec -T postgres createdb -U xmail $$db; \
+	done
+	@echo "test databases ready (xmail_test, xmail_e2e)"
 
 ## infra-down: stop infra (keeps volumes)
 infra-down:

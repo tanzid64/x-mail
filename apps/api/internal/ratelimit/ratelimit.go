@@ -24,10 +24,15 @@ import (
 type Limiter struct {
 	rdb    *redis.Client
 	logger *slog.Logger
+	// scale multiplies every configured allowance; see config.RateLimitScale.
+	scale float64
 }
 
-func New(rdb *redis.Client, logger *slog.Logger) *Limiter {
-	return &Limiter{rdb: rdb, logger: logger}
+func New(rdb *redis.Client, logger *slog.Logger, scale float64) *Limiter {
+	if scale <= 0 {
+		scale = 1
+	}
+	return &Limiter{rdb: rdb, logger: logger, scale: scale}
 }
 
 type Result struct {
@@ -60,6 +65,15 @@ func (l *Limiter) Allow(ctx context.Context, key string, limit int, window time.
 	return Result{Allowed: true, Remaining: limit - count}, nil
 }
 
+// scaled applies the deployment-wide multiplier, never dropping below 1.
+func (l *Limiter) scaled(limit int) int {
+	scaled := int(float64(limit) * l.scale)
+	if scaled < 1 {
+		return 1
+	}
+	return scaled
+}
+
 // KeyFunc derives the bucket a request counts against.
 type KeyFunc func(*http.Request) string
 
@@ -80,6 +94,7 @@ func (l *Limiter) Middleware(name string, limit int, window time.Duration, keyFn
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			limit := l.scaled(limit)
 			key := fmt.Sprintf("%s:%s", name, keyFn(r))
 
 			result, err := l.Allow(r.Context(), key, limit, window)

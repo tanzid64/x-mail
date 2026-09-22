@@ -1,10 +1,13 @@
 import { Link, useRouterState } from '@tanstack/react-router'
-import { PenSquare, Mail } from 'lucide-react'
+import { PenSquare, Mail, Settings } from 'lucide-react'
+
+import { AccountSwitcher } from '@/components/layout/account-switcher'
 
 import { Button } from '@/components/ui/button'
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -28,8 +31,10 @@ export function AppSidebar() {
           x-mail
         </div>
 
+        <AccountSwitcher />
+
         {/* Compose is wired up in the sending phase. */}
-        <Button className="mx-2 justify-start gap-2" disabled>
+        <Button className="justify-start gap-2" disabled>
           <PenSquare className="size-4" />
           Compose
         </Button>
@@ -54,6 +59,19 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={pathname.startsWith('/settings')}>
+              <Link to="/settings/accounts">
+                <Settings className="size-4" />
+                <span>Settings</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   )
 }

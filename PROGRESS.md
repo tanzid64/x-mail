@@ -3,7 +3,7 @@
 Live tracker for the plan in [`docs/PLAN.md`](docs/PLAN.md).
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
-**Current phase:** Phase 2 — Multi-Account (Phase 1 complete)
+**Current phase:** Phase 3 — Mailbox MVP (Phases 1–2 complete)
 
 ---
 
@@ -35,23 +35,23 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] Rate limiting (IP + endpoint)
 - [x] React + Vite + TS + Tailwind + shadcn/ui
 - [x] TanStack Router + TanStack Query
-- [~] Zustand — installed, no UI state to hold yet (see decision 13)
+- [x] Zustand — holds the active account selection
 - [x] API client + auth guard
 - [x] Login / Register / Forgot-password screens
 - [x] Base app shell (sidebar + header)
 
 ## Phase 2 — Multi-Account
 
-- [ ] `mail_accounts`, `domains`, `mail_addresses` tables
-- [ ] Credential encryption (AES-256-GCM, master key from env)
-- [ ] `MailProvider` interface
-- [ ] Resend provider implementation
-- [ ] Mail account CRUD API
-- [ ] Domain sync/management API
-- [ ] Mail address CRUD API
-- [ ] Ownership/authorization enforcement
-- [ ] Account switcher UI
-- [ ] Settings → Accounts screens
+- [x] `mail_accounts`, `domains`, `mail_addresses` tables
+- [x] Credential encryption (AES-256-GCM, master key from env)
+- [x] `MailProvider` interface
+- [x] Resend provider implementation
+- [x] Mail account CRUD API
+- [x] Domain sync/management API
+- [x] Mail address CRUD API
+- [x] Ownership/authorization enforcement
+- [x] Account switcher UI
+- [x] Settings → Accounts screens
 
 ## Phase 3 — Mailbox MVP
 
@@ -140,8 +140,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
 ## Cross-cutting (tracked continuously)
 
-- [ ] Account isolation tests
-- [~] Authorization tests — auth/session coverage in place; account isolation lands with Phase 2
+- [x] Account isolation tests
+- [x] Authorization tests
 - [ ] Webhook idempotency tests
 - [ ] Worker retry/idempotency tests
 - [ ] HTML sanitization of inbound mail
@@ -167,4 +167,10 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 10 | Vite proxies `/api` and `/ws` to the Go API in dev | Keeps the session cookie same-origin, so dev matches production behind Nginx — no CORS preflights, no SameSite surprises |
 | 11 | Code-based TanStack Router, not file-based | No codegen step to keep in sync; the route tree stays explicit and fully typed |
 | 12 | Folders are one `/$folder` route, not eight | Inbox/Sent/Trash differ only by which label is queried; `INBOX` in `router.tsx` is the typed "go to inbox" target |
-| 13 | Zustand deferred until there is UI state worth holding | Phase 1 has none — TanStack Query owns the session; adding a store now would be empty ceremony |
+| 13 | Zustand deferred until there is UI state worth holding | Phase 1 had none — TanStack Query owns the session. It now holds the active-account selection, persisted so reopening returns to the same mailbox |
+| 14 | Mail addresses are globally unique | Inbound routing resolves a recipient by address alone (plan §22); two accounts claiming one address would make routing ambiguous |
+| 15 | Anything another user owns returns 404, never 403 | A 403 confirms the record exists, which is itself a disclosure |
+| 16 | Ownership predicates live in the SQL, not in a separate check | A handler cannot forget to authorize if the query itself cannot match another user's row |
+| 17 | Credentials verified against the provider before being stored | A bad key is reported at the form rather than at the user's first send, days later |
+| 18 | `RATE_LIMIT_SCALE` and `RESEND_BASE_URL` env overrides, both rejected in production | Lets the e2e suite run a stub provider and register many users from one IP, without weakening the deployed system |
+| 19 | e2e runs its own stack: ports 8099/8091/5181 and the xmail_e2e database | Can run alongside `make dev` without either disturbing the other, and never touches the Go tests' database |

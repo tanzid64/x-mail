@@ -41,8 +41,12 @@ make lint           # go vet + oxlint
 Single Go test: `cd apps/api && go test ./internal/auth/ -run TestLoginRejectsBadCredentials -v`
 Single e2e test: `cd apps/web && npx playwright test -g "signs out"`
 
-`make e2e` starts the API and Vite itself (reusing them if already up), so only
-`make infra` has to be running first.
+`make e2e` starts its own isolated stack — a stub Resend (8099), the API (8091) and Vite (5181),
+against the `xmail_e2e` database — so it can run alongside `make dev`. Only `make infra` has to
+be running first.
+
+Go integration tests share one database and truncate it, so `make test-api` runs with `-p 1`.
+Running `go test ./...` directly makes packages delete each other's rows.
 
 **Local ports** are shifted away from the defaults because this machine already runs other
 stacks on 5432/6379/8080/5173: Postgres `5433`, Redis `6380`, API `8090`, web `5180`.
@@ -92,6 +96,9 @@ sandboxed frame. Never inject raw email HTML into the DOM.
 **Threading uses headers first** (`Message-ID`, `In-Reply-To`, `References`), with subject/
 participant heuristics only as fallback.
 
+**Provider credentials are verified before they are stored,** and re-checkable afterwards, so a
+bad or revoked key surfaces in settings rather than as a silently failed send.
+
 **Attachments never live in Postgres.** Bytes go to the storage interface (local FS in dev,
 S3/R2 in prod); the row holds `storage_key`. Authorize on every download.
 
@@ -107,3 +114,5 @@ S3/R2 in prod); the row holds `storage_key`. Authorize on every download.
   windows, active account, theme). Do not mirror the mailbox into Zustand.
 - Realtime events invalidate TanStack Query keys; they do not patch cached lists by hand.
 - shadcn/ui components are added via the shadcn MCP server / CLI rather than hand-copied.
+- `RESEND_BASE_URL` and `RATE_LIMIT_SCALE` exist only so tests can run a stub provider and skip
+  signup throttling; `config.Load` refuses both in production. Do not reach for them elsewhere.

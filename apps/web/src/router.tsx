@@ -14,6 +14,9 @@ import { LoginPage } from '@/routes/login'
 import { MailboxPage } from '@/routes/mailbox'
 import { RegisterPage } from '@/routes/register'
 import { ResetPasswordPage } from '@/routes/reset-password'
+import { SettingsAccountDetailPage } from '@/routes/settings/account-detail'
+import { SettingsAccountsPage } from '@/routes/settings/accounts'
+import { SettingsLayout } from '@/routes/settings/settings-layout'
 import { VerifyEmailPage } from '@/routes/verify-email'
 
 interface RouterContext {
@@ -106,6 +109,32 @@ const folderRoute = createRoute({
   component: MailboxPage,
 })
 
+const settingsRoute = createRoute({
+  getParentRoute: () => appLayoutRoute,
+  path: '/settings',
+  component: SettingsLayout,
+})
+
+const settingsAccountsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/accounts',
+  component: SettingsAccountsPage,
+})
+
+const settingsAccountDetailRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/accounts/$accountId',
+  component: SettingsAccountDetailPage,
+})
+
+const settingsIndexRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/',
+  beforeLoad: () => {
+    throw redirect({ to: '/settings/accounts' })
+  },
+})
+
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
@@ -121,7 +150,10 @@ const routeTree = rootRoute.addChildren([
   forgotPasswordRoute,
   resetPasswordRoute,
   verifyEmailRoute,
-  appLayoutRoute.addChildren([folderRoute]),
+  appLayoutRoute.addChildren([
+    folderRoute,
+    settingsRoute.addChildren([settingsIndexRoute, settingsAccountsRoute, settingsAccountDetailRoute]),
+  ]),
 ])
 
 export function buildRouter(queryClient: QueryClient) {

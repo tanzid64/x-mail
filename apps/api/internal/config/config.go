@@ -49,6 +49,12 @@ type Config struct {
 	// ResendBaseURL overrides the Resend API endpoint. It exists so end-to-end
 	// tests can point the stack at a stub provider, and is empty in production.
 	ResendBaseURL string
+
+	// RateLimitScale multiplies every endpoint's request allowance. It exists
+	// so an operator can loosen limits for a trusted deployment, and so the
+	// end-to-end suite can register more than a handful of users from one IP.
+	// Production must leave it at 1.
+	RateLimitScale float64
 }
 
 func (c Config) IsProduction() bool { return c.Env == "production" }
@@ -97,6 +103,7 @@ func Load() (*Config, error) {
 
 		ResendWebhookSecret: os.Getenv("RESEND_WEBHOOK_SECRET"),
 		ResendBaseURL:       os.Getenv("RESEND_BASE_URL"),
+		RateLimitScale:      defFloat("RATE_LIMIT_SCALE", 1),
 	}
 
 	// Session secret signs session cookies; anything shorter than 32 bytes is
@@ -138,6 +145,12 @@ func Load() (*Config, error) {
 	if cfg.IsProduction() && cfg.ResendBaseURL != "" {
 		problems = append(problems, "RESEND_BASE_URL must not be set in production")
 	}
+	if cfg.RateLimitScale <= 0 {
+		problems = append(problems, "RATE_LIMIT_SCALE must be greater than 0")
+	}
+	if cfg.IsProduction() && cfg.RateLimitScale != 1 {
+		problems = append(problems, "RATE_LIMIT_SCALE must be 1 in production")
+	}
 
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("invalid configuration:\n  - %s", strings.Join(problems, "\n  - "))
@@ -177,6 +190,13 @@ func def(key, fallback string) string {
 
 func defInt(key string, fallback int) int {
 	if v, err := strconv.Atoi(strings.TrimSpace(os.Getenv(key))); err == nil {
+		return v
+	}
+	return fallback
+}
+
+func defFloat(key string, fallback float64) float64 {
+	if v, err := strconv.ParseFloat(strings.TrimSpace(os.Getenv(key)), 64); err == nil {
 		return v
 	}
 	return fallback

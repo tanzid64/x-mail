@@ -50,7 +50,7 @@ type Server struct {
 func New(deps Deps) (*Server, error) {
 	cfg := deps.Config
 
-	limiter := ratelimit.New(deps.Redis, deps.Logger)
+	limiter := ratelimit.New(deps.Redis, deps.Logger, cfg.RateLimitScale)
 
 	sealer, err := crypto.NewSealer(cfg.EncryptionMasterKey)
 	if err != nil {

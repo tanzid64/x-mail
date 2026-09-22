@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { LogOut, Search, User as UserIcon } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -57,9 +57,11 @@ export function AppHeader({ user }: AppHeaderProps) {
               <span className="text-xs font-normal text-muted-foreground">{user.email}</span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled>
-              <UserIcon className="size-4" />
-              Settings
+            <DropdownMenuItem asChild>
+              <Link to="/settings/accounts">
+                <UserIcon className="size-4" />
+                Settings
+              </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => void onSignOut()}>

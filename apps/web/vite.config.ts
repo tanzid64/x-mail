@@ -3,20 +3,24 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 
+const apiTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8090'
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
   server: {
-    port: 5180,
+    // The end-to-end suite runs its own isolated stack on different ports, so
+    // it can run alongside `make dev` without either disturbing the other.
+    port: Number(process.env.WEB_PORT ?? 5180),
     strictPort: true,
     // Proxying keeps the API same-origin during development, so the session
     // cookie behaves exactly as it will in production behind Nginx — no CORS
     // preflights and no SameSite surprises.
     proxy: {
-      '/api': { target: 'http://localhost:8090', changeOrigin: true },
-      '/ws': { target: 'ws://localhost:8090', ws: true },
+      '/api': { target: apiTarget, changeOrigin: true },
+      '/ws': { target: apiTarget.replace(/^http/, 'ws'), ws: true },
     },
   },
 })
