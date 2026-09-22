@@ -33,6 +33,8 @@ make migrate-up     # apply migrations       make migrate-down   # roll back one
 make migrate-new name=add_foo                # create a migration pair
 make api            # run the API on the host    make worker   # run the worker on the host
 make web            # vite dev server
+make docker-up      # run the whole stack in containers (web on :8180)
+make docker-down    # stop the app containers, leaving postgres/redis up
 make test           # go test ./... + web typecheck
 make e2e            # playwright browser tests against the real stack
 make lint           # go vet + oxlint
@@ -51,7 +53,9 @@ Running `go test ./...` directly makes packages delete each other's rows.
 **Local ports** are shifted away from the defaults because this machine already runs other
 stacks on 5432/6379/8080/5173: Postgres `5433`, Redis `6380`, API `8090`, worker health `8092`,
 web `5180`. The e2e stack uses its own: stub provider `8099`, API `8091`, worker health `8093`,
-web `5181`.
+web `5181`. The container stack (`make docker-up`) serves the app through nginx on `8180`, with
+the API on `8190` and worker health on `8192`; it shares the same postgres and redis as host
+development, so the two see the same database.
 
 Integration tests that need Postgres read `TEST_DATABASE_URL` and skip when it is unset, so
 `make infra` must be running for them to actually execute. A suite that reports `ok` having
@@ -118,3 +122,9 @@ S3/R2 in prod); the row holds `storage_key`. Authorize on every download.
 - shadcn/ui components are added via the shadcn MCP server / CLI rather than hand-copied.
 - `RESEND_BASE_URL` and `RATE_LIMIT_SCALE` exist only so tests can run a stub provider and skip
   signup throttling; `config.Load` refuses both in production. Do not reach for them elsewhere.
+- Docker: one API image carries `server`, `worker` and `migrate` — they share every package, so
+  building them separately would compile the same code twice. The image runs as a non-root user
+  and ships no `.env`; configuration comes from the environment. The web image serves
+  `deploy/nginx.conf` itself rather than a copy, which is why it builds from the repository root.
+- Health endpoints answer HEAD as well as GET: probes commonly use HEAD, and chi — unlike
+  `net/http`'s ServeMux — does not imply it from a GET route.

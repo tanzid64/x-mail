@@ -1,0 +1,13 @@
+# Build artefacts and local state that must never reach the image.
+bin/
+storage/
+tmp/
+*.log
+
+# Local configuration. Secrets come from the environment at run time; baking a
+# .env into an image would ship the master key with it.
+.env
+.env.*
+
+# Not needed to build: tests run in CI, not in the image.
+**/*_test.go

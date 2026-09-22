@@ -42,9 +42,29 @@ dev: infra
 	$(MAKE) --no-print-directory web & \
 	wait
 
-## docker-up: run the whole stack in containers instead
+## docker-build: build the api and web images
+docker-build:
+	docker compose --profile app build
+
+## docker-up: run the whole stack in containers (web on :8180)
+# Uses the same postgres and redis as `make dev`, so the two share a database.
 docker-up:
-	docker compose --profile app up --build
+	docker compose --profile app up -d --build
+	@echo "web  http://localhost:8180"
+	@echo "api  http://localhost:8190"
+
+## docker-down: stop the application containers, leaving infra running
+docker-down:
+	docker compose --profile app stop api worker web
+	docker compose --profile app rm -f api worker web
+
+## docker-logs: follow the application container logs
+docker-logs:
+	docker compose --profile app logs -f api worker web
+
+## docker-ps: show container status
+docker-ps:
+	docker compose ps
 
 ## api: run the HTTP API on the host
 api:
@@ -106,7 +126,8 @@ lint:
 build:
 	cd $(API_DIR) && go build -o bin/server ./cmd/server && go build -o bin/worker ./cmd/worker
 
-.PHONY: help infra infra-down infra-reset dev docker-up api worker web \
+.PHONY: help infra infra-down infra-reset dev api worker web \
+        docker-build docker-up docker-down docker-logs docker-ps \
         migrate-up migrate-down migrate-status migrate-new psql \
         test test-api test-api-v test-web e2e lint build
 

@@ -1,0 +1,18 @@
+# The web image builds from the repository root, so this keeps the context
+# small and stops local state reaching any image.
+
+.git/
+**/node_modules/
+**/dist/
+**/bin/
+**/storage/
+**/.e2e-storage/
+**/test-results/
+**/playwright-report/
+**/tmp/
+**/*.log
+
+# Secrets come from the environment at run time.
+.env
+.env.*
+!.env.example

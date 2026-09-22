@@ -147,7 +147,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] HTML sanitization of inbound mail
 - [ ] Observability (metrics, tracing)
 - [ ] Abuse prevention / sending limits
-- [~] Nginx + production Docker setup — `deploy/nginx.conf` written; production compose pending
+- [x] Nginx + Docker images (api + web, `make docker-up`)
 
 ---
 
@@ -195,3 +195,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 38 | Redis pub/sub between API and worker, one pattern subscription per process | The worker stores the mail but the API holds the socket; this also works unchanged across several API instances |
 | 39 | A slow websocket client is dropped, not waited on | Blocking on one stalled browser would hold up the fan-out for everyone |
 | 40 | Websocket origins configured explicitly, not inferred from Host | Any proxy that rewrites Host breaks the default Origin-vs-Host check — which is exactly what happened behind the dev proxy |
+| 41 | One API image carries server, worker and migrate | They share every package; separate images would compile the same code twice and could drift apart |
+| 42 | Images run as a non-root user and contain no `.env` | Nothing needs privilege, and baking a `.env` would ship the encryption master key inside the image |
+| 43 | Web image builds from the repo root to serve `deploy/nginx.conf` | A copy inside `apps/web` would drift from the config production actually uses |
+| 44 | Health endpoints answer HEAD as well as GET | Container probes commonly use HEAD; chi does not imply it from a GET route, which made the API container report unhealthy while being perfectly fine |

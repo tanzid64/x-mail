@@ -193,8 +193,12 @@ func (s *Server) setupMiddleware() {
 }
 
 func (s *Server) setupRoutes() {
+	// HEAD as well as GET: container healthchecks and uptime monitors commonly
+	// probe with HEAD, and chi — unlike net/http's ServeMux — does not imply it.
 	s.router.Get("/healthz", s.handleLiveness)
+	s.router.Head("/healthz", s.handleLiveness)
 	s.router.Get("/readyz", s.handleReadiness)
+	s.router.Head("/readyz", s.handleReadiness)
 
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Get("/ping", func(w http.ResponseWriter, _ *http.Request) {

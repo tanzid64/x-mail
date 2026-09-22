@@ -1,5 +1,10 @@
 name: x-mail
 
+# Infrastructure runs by default; the application containers are behind the
+# "app" profile. Day-to-day development runs the API, worker and web on the
+# host against these services (`make infra`), which gives live reload; the
+# profile exists to run the real images the way production does.
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -32,20 +37,30 @@ services:
       timeout: 3s
       retries: 20
 
-  # Application containers are opt-in: `docker compose --profile app up`.
-  # Day-to-day development runs the API/worker/web on the host against the
-  # infra services above (`make infra` + `make api` / `make worker` / `make web`).
   api:
     profiles: ["app"]
     build:
       context: ./apps/api
+    image: x-mail/api:local
     restart: unless-stopped
     env_file: .env
     environment:
+      APP_ENV: development
+      HTTP_ADDR: ":8090"
+      # Service names, not localhost: inside the network these resolve to the
+      # containers, and the host-mapped ports do not exist here.
       DATABASE_URL: postgres://xmail:xmail@postgres:5432/xmail?sslmode=disable
       REDIS_ADDR: redis:6379
+      # The browser reaches the stack through nginx, so that is the origin the
+      # session cookie and the websocket upgrade are checked against.
+      CORS_ORIGINS: http://localhost:8180
+      APP_BASE_URL: http://localhost:8180
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_PATH: /app/storage
+    volumes:
+      - attachments:/app/storage
     ports:
-      - "8090:8090"
+      - "8190:8090"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -54,16 +69,49 @@ services:
     profiles: ["app"]
     build:
       context: ./apps/api
+    image: x-mail/api:local
     command: ["/app/worker"]
     restart: unless-stopped
     env_file: .env
     environment:
+      APP_ENV: development
+      WORKER_HTTP_ADDR: ":8092"
       DATABASE_URL: postgres://xmail:xmail@postgres:5432/xmail?sslmode=disable
       REDIS_ADDR: redis:6379
+      APP_BASE_URL: http://localhost:8180
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_PATH: /app/storage
+    volumes:
+      # The same volume as the API: the worker reads the attachment bytes the
+      # API wrote when it hands a message to the provider.
+      - attachments:/app/storage
+    ports:
+      - "8192:8092"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--output-document=/dev/null", "http://127.0.0.1:8092/healthz"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+
+  web:
+    profiles: ["app"]
+    build:
+      # Root context so the image can serve deploy/nginx.conf rather than a
+      # copy that drifts from it.
+      context: .
+      dockerfile: apps/web/Dockerfile
+    image: x-mail/web:local
+    restart: unless-stopped
+    ports:
+      - "8180:80"
+    depends_on:
+      api: { condition: service_healthy }
 
 volumes:
   pgdata:
   redisdata:
+  attachments:
