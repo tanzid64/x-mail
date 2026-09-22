@@ -19,6 +19,7 @@ import (
 	"github.com/dark/x-mail/api/internal/config"
 	"github.com/dark/x-mail/api/internal/crypto"
 	"github.com/dark/x-mail/api/internal/httpx"
+	"github.com/dark/x-mail/api/internal/mailbox"
 	"github.com/dark/x-mail/api/internal/mailer"
 	"github.com/dark/x-mail/api/internal/ratelimit"
 	"github.com/dark/x-mail/api/internal/server/middleware"
@@ -41,6 +42,7 @@ type Server struct {
 	limiter  *ratelimit.Limiter
 	auth     *auth.Handler
 	accounts *accounts.Handler
+	mailbox  *mailbox.Handler
 }
 
 // New wires the dependency graph and returns a ready router.
@@ -78,8 +80,15 @@ func New(deps Deps) (*Server, error) {
 		providerFactory = accounts.NewProviderFactory(cfg.ResendBaseURL)
 	}
 
+	accountsRepo := accounts.NewRepository(deps.DB)
+
 	accountsHandler := accounts.NewHandler(
-		accounts.NewService(accounts.NewRepository(deps.DB), sealer, providerFactory, deps.Logger),
+		accounts.NewService(accountsRepo, sealer, providerFactory, deps.Logger),
+		deps.Logger,
+	)
+
+	mailboxHandler := mailbox.NewHandler(
+		mailbox.NewService(mailbox.NewRepository(deps.DB), accountsRepo, deps.Logger),
 		deps.Logger,
 	)
 
@@ -89,6 +98,7 @@ func New(deps Deps) (*Server, error) {
 		limiter:  limiter,
 		auth:     authHandler,
 		accounts: accountsHandler,
+		mailbox:  mailboxHandler,
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -140,6 +150,9 @@ func (s *Server) setupRoutes() {
 			r.Route("/mail-accounts", s.accounts.RoutesAccounts)
 			r.Route("/domains", s.accounts.RoutesDomains)
 			r.Route("/addresses", s.accounts.RoutesAddresses)
+
+			r.Route("/threads", s.mailbox.RoutesThreads)
+			r.Route("/labels", s.mailbox.RoutesLabels)
 		})
 	})
 

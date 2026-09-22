@@ -111,6 +111,28 @@ func (r *Repository) ListAccounts(ctx context.Context, userID uuid.UUID) ([]Mail
 	return accounts, rows.Err()
 }
 
+// AccountIDs returns every account the user owns. It is the basis of mailbox
+// scoping: a unified inbox reads this set, and a single-account view is one
+// element of it. Callers never take account ids from the client.
+func (r *Repository) AccountIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id FROM mail_accounts WHERE user_id = $1 ORDER BY created_at`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make([]uuid.UUID, 0)
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // GetAccount loads one account **owned by userID**.
 //
 // The ownership predicate lives in the SQL rather than in a separate check, so
