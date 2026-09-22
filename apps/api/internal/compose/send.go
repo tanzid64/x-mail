@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/dark/x-mail/api/internal/mailbox"
+	"github.com/dark/x-mail/api/internal/sanitize"
 )
 
 var (
@@ -174,13 +175,14 @@ func (r *Repository) QueueDraft(ctx context.Context, userID, draftID uuid.UUID) 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO messages (
 			mail_account_id, thread_id, message_id, in_reply_to, "references",
-			sender_name, sender_email, subject, snippet, html_body, text_body,
+			sender_name, sender_email, subject, snippet, html_body, html_sanitized, text_body,
 			direction, status, is_read, idempotency_key, size_bytes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-		        'outbound', 'queued', true, $12, $13)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+		        'outbound', 'queued', true, $13, $14)
 		RETURNING id`,
 		draft.MailAccountID, *threadID, messageID, inReplyTo, references,
-		from.displayName, from.email, draft.Subject, snippet, draft.HTMLBody, draft.TextBody,
+		from.displayName, from.email, draft.Subject, snippet, draft.HTMLBody,
+		sanitize.HTML(draft.HTMLBody), draft.TextBody,
 		idempotencyKey, len(draft.HTMLBody)+len(draft.TextBody)).Scan(&newMessageID)
 	if err != nil {
 		return nil, err

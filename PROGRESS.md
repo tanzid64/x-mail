@@ -3,7 +3,7 @@
 Live tracker for the plan in [`docs/PLAN.md`](docs/PLAN.md).
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
-**Current phase:** Phase 5 — Receiving (Phases 1–4 complete)
+**Current phase:** Phase 6 — Realtime (Phases 1–5 complete)
 
 ---
 
@@ -81,14 +81,14 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
 ## Phase 5 — Receiving
 
-- [ ] `POST /api/v1/webhooks/resend` + signature verification (Svix)
-- [ ] `email_events` table + idempotency
-- [ ] `ProcessInboundEmail` job
-- [ ] Inbound routing (address → account)
-- [ ] MIME/body parsing + sanitization
-- [ ] Thread detection (Message-ID / In-Reply-To / References)
-- [ ] Inbound attachment processing
-- [ ] Delivery/bounce/complaint event handling
+- [x] `POST /api/v1/webhooks/resend` + signature verification (Svix)
+- [x] `email_events` table + idempotency
+- [x] `ProcessInboundEmail` job
+- [x] Inbound routing (address → account)
+- [x] MIME/body parsing + sanitization
+- [x] Thread detection (Message-ID / In-Reply-To / References)
+- [x] Inbound attachment processing
+- [x] Delivery/bounce/complaint event handling
 
 ## Phase 6 — Realtime
 
@@ -142,9 +142,9 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
 - [x] Account isolation tests
 - [x] Authorization tests
-- [ ] Webhook idempotency tests
+- [x] Webhook idempotency tests
 - [x] Worker retry/idempotency tests
-- [~] HTML sanitization of inbound mail — rendered in a sandboxed frame; server-side sanitising lands with inbound mail
+- [x] HTML sanitization of inbound mail
 - [ ] Observability (metrics, tracing)
 - [ ] Abuse prevention / sending limits
 - [ ] Nginx + production Docker setup
@@ -186,3 +186,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 29 | Attachments re-pointed from draft to message, never copied | The bytes are already in object storage; copying them would double storage for every send |
 | 30 | Attachment downloads are always octet-stream with nosniff | An HTML or SVG attachment rendered inline would execute as a page on our origin |
 | 31 | Worker exposes /healthz and /readyz | A worker that cannot be probed cannot be orchestrated; it also gives the e2e stack a readiness signal |
+| 32 | Webhook endpoint is per-account, with a per-account signing secret | One secret to verify against rather than every secret in the system; falls back to a deployment-wide secret for single-tenant setups |
+| 33 | Webhook idempotency enforced by a unique constraint, not check-then-insert | Providers redeliver by design, and two deliveries can race a check |
+| 34 | Inbound HTML sanitised once on arrival into its own column | Cost paid per message rather than per view, and the untouched original means a sanitiser fix can be re-applied instead of losing the message |
+| 35 | `InsertMessage` sanitises, so no caller has to remember | The seeder forgot, and inbound mail rendered as plain text; one guarantee beats N call sites |
+| 36 | Delivery status only moves forward | Providers reorder events; a late "sent" must not undo a recorded "delivered" |

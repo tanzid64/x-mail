@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+
+	"github.com/dark/x-mail/api/internal/sanitize"
 )
 
 // NewMessage describes a message to store. It is the single entry point for
@@ -71,6 +73,11 @@ func (r *Repository) InsertMessage(ctx context.Context, msg NewMessage) (*Messag
 	}
 
 	snippet := Snippet(msg.TextBody, msg.HTMLBody)
+
+	// Sanitising here rather than at each call site means every stored message
+	// has a render-safe body, whatever wrote it — the inbound webhook, the
+	// seeder, or an importer added later. The original stays in html_body.
+	sanitized := sanitize.HTML(msg.HTMLBody)
 	size := len(msg.HTMLBody) + len(msg.TextBody)
 	hasAttachments := false
 
@@ -85,15 +92,15 @@ func (r *Repository) InsertMessage(ctx context.Context, msg NewMessage) (*Messag
 		INSERT INTO messages (
 			mail_account_id, thread_id, message_id, in_reply_to, "references",
 			provider_message_id, sender_name, sender_email, subject, snippet,
-			html_body, text_body, direction, status,
+			html_body, html_sanitized, text_body, direction, status,
 			is_read, is_starred, is_important, has_attachments, size_bytes,
 			sent_at, received_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-		        $15, $16, $17, $18, $19, $20, $21)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+		        $16, $17, $18, $19, $20, $21, $22)
 		RETURNING id`,
 		msg.MailAccountID, threadID, msg.MessageID, msg.InReplyTo, references,
 		msg.ProviderMessageID, msg.SenderName, msg.SenderEmail, msg.Subject, snippet,
-		msg.HTMLBody, msg.TextBody, msg.Direction, msg.Status,
+		msg.HTMLBody, sanitized, msg.TextBody, msg.Direction, msg.Status,
 		msg.IsRead, msg.IsStarred, msg.IsImportant, hasAttachments, size,
 		msg.SentAt, msg.ReceivedAt,
 	).Scan(&messageID)

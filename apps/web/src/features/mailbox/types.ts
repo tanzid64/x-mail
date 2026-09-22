@@ -52,7 +52,10 @@ export interface Message {
   sender_email: string
   subject: string
   snippet: string
+  /** The body exactly as received; never rendered directly. */
   html_body: string
+  /** Server-sanitised copy — this is what is safe to display. */
+  html_sanitized: string
   text_body: string
   direction: 'inbound' | 'outbound'
   status: string

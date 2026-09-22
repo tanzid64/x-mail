@@ -8,6 +8,8 @@ export interface MailAccount {
   provider_account_id: string | null
   /** Masked form of the API key, e.g. "re_123…wxyz". The key itself never leaves the server. */
   api_key_hint: string
+  /** Masked signing secret for this account's provider callbacks. */
+  webhook_secret_hint: string
   status: AccountStatus
   status_message: string
   last_checked_at: string | null

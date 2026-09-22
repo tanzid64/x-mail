@@ -72,7 +72,9 @@ export function MessageCard({ message, defaultOpen }: MessageCardProps) {
 
       {open ? (
         <div className="border-t px-4 py-3">
-          <MessageBody html={message.html_body} text={message.text_body} />
+          {/* Always the sanitised copy — the server guarantees one for every
+              stored message, inbound or outbound. */}
+          <MessageBody html={message.html_sanitized} text={message.text_body} />
         </div>
       ) : null}
     </article>

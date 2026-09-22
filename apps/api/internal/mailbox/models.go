@@ -85,10 +85,13 @@ type Message struct {
 	SenderName  string `json:"sender_name"`
 	SenderEmail string `json:"sender_email"`
 
-	Subject  string `json:"subject"`
-	Snippet  string `json:"snippet"`
+	Subject string `json:"subject"`
+	Snippet string `json:"snippet"`
+	// HTMLBody is the body exactly as received and is never rendered directly.
 	HTMLBody string `json:"html_body"`
-	TextBody string `json:"text_body"`
+	// HTMLSanitized is the render-safe copy, produced once on arrival.
+	HTMLSanitized string `json:"html_sanitized"`
+	TextBody      string `json:"text_body"`
 
 	Direction string `json:"direction"`
 	Status    string `json:"status"`

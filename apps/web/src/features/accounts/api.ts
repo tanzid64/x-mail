@@ -105,6 +105,20 @@ export function useRotateAPIKey(id: string) {
   })
 }
 
+export function useSetWebhookSecret(id: string) {
+  const invalidate = useInvalidateAccounts()
+  return useMutation<MailAccount, ApiError, { secret: string }>({
+    mutationFn: async (input) =>
+      (
+        await apiFetch<{ mail_account: MailAccount }>(`/mail-accounts/${id}/webhook-secret`, {
+          method: 'POST',
+          body: input,
+        })
+      ).mail_account,
+    onSuccess: invalidate,
+  })
+}
+
 export function useCheckCredentials(id: string) {
   const invalidate = useInvalidateAccounts()
   return useMutation<MailAccount, ApiError, void>({

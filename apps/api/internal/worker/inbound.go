@@ -15,7 +15,6 @@ import (
 
 	"github.com/dark/x-mail/api/internal/accounts"
 	"github.com/dark/x-mail/api/internal/mailbox"
-	"github.com/dark/x-mail/api/internal/sanitize"
 	"github.com/dark/x-mail/api/internal/storage"
 	"github.com/dark/x-mail/api/internal/webhooks"
 )
@@ -200,11 +199,6 @@ func (h *ProcessEventHandler) handleReceived(
 		return "", fmt.Errorf("store inbound message: %w", err)
 	}
 
-	// Sanitise for rendering. Doing it here rather than at read time means the
-	// cost is paid once per message instead of once per view.
-	if err := h.mailbox.SetSanitizedHTML(ctx, stored.ID, sanitize.HTML(data.HTML)); err != nil {
-		h.logger.WarnContext(ctx, "could not store sanitised html", "error", err, "message_id", stored.ID)
-	}
 	if deliveredTo != uuid.Nil {
 		if err := h.mailbox.SetDeliveredToAddress(ctx, stored.ID, deliveredTo); err != nil {
 			h.logger.WarnContext(ctx, "could not record delivery address", "error", err)

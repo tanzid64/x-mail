@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeft, Check, Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react'
 
 import { DomainCard } from '@/components/settings/domain-card'
+import { WebhookSection } from '@/components/settings/webhook-section'
 import { AccountStatusBadge } from '@/components/settings/status-badge'
 import {
   AlertDialog,
@@ -224,6 +225,8 @@ export function SettingsAccountDetailPage() {
           </p>
         ) : null}
       </section>
+
+      <WebhookSection account={account} />
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">

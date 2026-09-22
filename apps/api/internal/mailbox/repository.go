@@ -239,15 +239,17 @@ func (r *Repository) GetThread(ctx context.Context, accountIDs []uuid.UUID, thre
 
 const messageColumns = `m.id, m.mail_account_id, m.thread_id, m.message_id, m.in_reply_to,
 	m."references", m.provider_message_id, m.sender_name, m.sender_email, m.subject, m.snippet,
-	m.html_body, m.text_body, m.direction, m.status, m.is_read, m.is_starred, m.is_important,
-	m.has_attachments, m.size_bytes, m.sent_at, m.received_at, m.created_at, m.updated_at`
+	m.html_body, m.html_sanitized, m.text_body, m.direction, m.status, m.is_read, m.is_starred,
+	m.is_important, m.has_attachments, m.size_bytes, m.sent_at, m.received_at, m.created_at,
+	m.updated_at`
 
 func scanMessage(row pgx.Row) (*Message, error) {
 	var m Message
 	err := row.Scan(&m.ID, &m.MailAccountID, &m.ThreadID, &m.MessageID, &m.InReplyTo,
 		&m.References, &m.ProviderMessageID, &m.SenderName, &m.SenderEmail, &m.Subject, &m.Snippet,
-		&m.HTMLBody, &m.TextBody, &m.Direction, &m.Status, &m.IsRead, &m.IsStarred, &m.IsImportant,
-		&m.HasAttachments, &m.SizeBytes, &m.SentAt, &m.ReceivedAt, &m.CreatedAt, &m.UpdatedAt)
+		&m.HTMLBody, &m.HTMLSanitized, &m.TextBody, &m.Direction, &m.Status, &m.IsRead, &m.IsStarred,
+		&m.IsImportant, &m.HasAttachments, &m.SizeBytes, &m.SentAt, &m.ReceivedAt, &m.CreatedAt,
+		&m.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
