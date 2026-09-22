@@ -1,9 +1,6 @@
-// Command worker runs background jobs: sending mail, processing inbound
-// webhooks, waking snoozed threads and dispatching scheduled sends.
-//
-// Job handlers are registered in internal/worker as each phase lands; until
-// then this process exists so the deployment topology, configuration and
-// connection handling are the same ones the jobs will run under.
+// Command worker runs background jobs: sending mail, and — as later phases land
+// — processing inbound webhooks, waking snoozed threads and dispatching
+// scheduled sends.
 package main
 
 import (
@@ -13,10 +10,15 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/dark/x-mail/api/internal/accounts"
+	"github.com/dark/x-mail/api/internal/compose"
 	"github.com/dark/x-mail/api/internal/config"
+	"github.com/dark/x-mail/api/internal/crypto"
 	"github.com/dark/x-mail/api/internal/database"
 	"github.com/dark/x-mail/api/internal/logging"
 	"github.com/dark/x-mail/api/internal/redisx"
+	"github.com/dark/x-mail/api/internal/storage"
+	"github.com/dark/x-mail/api/internal/worker"
 )
 
 func main() {
@@ -49,10 +51,52 @@ func run() error {
 	}
 	defer func() { _ = rdb.Close() }()
 
-	logger.Info("worker started", "env", cfg.Env, "registered_jobs", 0)
-	logger.Warn("no job handlers registered yet; queue processing arrives with the sending phase")
+	sealer, err := crypto.NewSealer(cfg.EncryptionMasterKey)
+	if err != nil {
+		return err
+	}
 
-	<-ctx.Done()
-	logger.Info("worker shutdown complete")
-	return nil
+	store, err := storage.New(storage.Options{
+		Driver:    cfg.StorageDriver,
+		LocalPath: cfg.StorageLocalPath,
+		S3: storage.S3Config{
+			Endpoint:  cfg.S3Endpoint,
+			Region:    cfg.S3Region,
+			Bucket:    cfg.S3Bucket,
+			AccessKey: cfg.S3AccessKeyID,
+			SecretKey: cfg.S3SecretKey,
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	accountsService := accounts.NewService(
+		accounts.NewRepository(pool),
+		sealer,
+		accounts.NewProviderFactory(cfg.ResendBaseURL),
+		logger,
+	)
+
+	server := worker.New(worker.Deps{
+		Redis:  worker.RedisOpt(rdb),
+		Logger: logger,
+		SendEmail: worker.NewSendEmailHandler(
+			compose.NewRepository(pool), accountsService, store, logger,
+		),
+	})
+
+	// Run blocks, so shutdown is driven from the signal context.
+	done := make(chan error, 1)
+	go func() { done <- server.Run() }()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		logger.Info("shutdown signal received, finishing in-flight jobs")
+		// Shutdown waits for running jobs, so a deploy cannot cut a send in half.
+		server.Shutdown()
+		return nil
+	}
 }

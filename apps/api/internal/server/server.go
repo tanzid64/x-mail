@@ -16,6 +16,7 @@ import (
 
 	"github.com/dark/x-mail/api/internal/accounts"
 	"github.com/dark/x-mail/api/internal/auth"
+	"github.com/dark/x-mail/api/internal/compose"
 	"github.com/dark/x-mail/api/internal/config"
 	"github.com/dark/x-mail/api/internal/crypto"
 	"github.com/dark/x-mail/api/internal/httpx"
@@ -23,6 +24,8 @@ import (
 	"github.com/dark/x-mail/api/internal/mailer"
 	"github.com/dark/x-mail/api/internal/ratelimit"
 	"github.com/dark/x-mail/api/internal/server/middleware"
+	"github.com/dark/x-mail/api/internal/storage"
+	"github.com/dark/x-mail/api/internal/worker"
 )
 
 type Deps struct {
@@ -30,6 +33,11 @@ type Deps struct {
 	DB     *pgxpool.Pool
 	Redis  *redis.Client
 	Logger *slog.Logger
+
+	// Storage holds attachment bytes. Built from config when nil.
+	Storage storage.Storage
+	// Enqueuer submits background jobs. Built from config when nil.
+	Enqueuer compose.Enqueuer
 
 	// ProviderFactory overrides how transport clients are built. Tests supply a
 	// fake here; production leaves it nil and gets the real implementations.
@@ -43,6 +51,7 @@ type Server struct {
 	auth     *auth.Handler
 	accounts *accounts.Handler
 	mailbox  *mailbox.Handler
+	compose  *compose.Handler
 }
 
 // New wires the dependency graph and returns a ready router.
@@ -92,6 +101,34 @@ func New(deps Deps) (*Server, error) {
 		deps.Logger,
 	)
 
+	store := deps.Storage
+	if store == nil {
+		store, err = storage.New(storage.Options{
+			Driver:    cfg.StorageDriver,
+			LocalPath: cfg.StorageLocalPath,
+			S3: storage.S3Config{
+				Endpoint:  cfg.S3Endpoint,
+				Region:    cfg.S3Region,
+				Bucket:    cfg.S3Bucket,
+				AccessKey: cfg.S3AccessKeyID,
+				SecretKey: cfg.S3SecretKey,
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	queue := deps.Enqueuer
+	if queue == nil {
+		queue = worker.NewEnqueuer(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
+	}
+
+	composeHandler := compose.NewHandler(
+		compose.NewService(compose.NewRepository(deps.DB), store, queue, deps.Logger),
+		deps.Logger,
+	)
+
 	s := &Server{
 		deps:     deps,
 		router:   chi.NewRouter(),
@@ -99,6 +136,7 @@ func New(deps Deps) (*Server, error) {
 		auth:     authHandler,
 		accounts: accountsHandler,
 		mailbox:  mailboxHandler,
+		compose:  composeHandler,
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -153,6 +191,8 @@ func (s *Server) setupRoutes() {
 
 			r.Route("/threads", s.mailbox.RoutesThreads)
 			r.Route("/labels", s.mailbox.RoutesLabels)
+			r.Route("/drafts", s.compose.RoutesDrafts)
+			r.Route("/attachments", s.compose.RoutesAttachments)
 		})
 	})
 

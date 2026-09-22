@@ -70,7 +70,7 @@ func (r *Repository) InsertMessage(ctx context.Context, msg NewMessage) (*Messag
 		return nil, err
 	}
 
-	snippet := makeSnippet(msg.TextBody, msg.HTMLBody)
+	snippet := Snippet(msg.TextBody, msg.HTMLBody)
 	size := len(msg.HTMLBody) + len(msg.TextBody)
 	hasAttachments := false
 
@@ -182,9 +182,10 @@ func (r *Repository) resolveThread(ctx context.Context, tx pgx.Tx, msg NewMessag
 	return threadID, err
 }
 
-// makeSnippet builds the one-line preview shown in a mailbox row, preferring
-// the plain-text body and falling back to stripped HTML.
-func makeSnippet(text, html string) string {
+// Snippet builds the one-line preview shown in a mailbox row, preferring the
+// plain-text body and falling back to stripped HTML. Exported so outbound mail
+// and inbound mail produce previews the same way.
+func Snippet(text, html string) string {
 	source := strings.TrimSpace(text)
 	if source == "" {
 		source = stripHTML(html)
