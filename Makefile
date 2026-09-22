@@ -83,14 +83,18 @@ test: test-api test-web
 test-api:
 	cd $(API_DIR) && go test ./...
 
-## test-web: frontend tests
+## test-web: frontend typecheck (unit tests land with the mailbox UI)
 test-web:
-	@test -d $(WEB_DIR)/node_modules && cd $(WEB_DIR) && npm test --if-present || echo "web not scaffolded yet, skipping"
+	cd $(WEB_DIR) && npm run typecheck
 
-## lint: vet + typecheck
+## e2e: browser tests against the real stack (needs `make infra`)
+e2e:
+	cd $(WEB_DIR) && npm run e2e
+
+## lint: vet + oxlint
 lint:
 	cd $(API_DIR) && go vet ./...
-	@test -d $(WEB_DIR)/node_modules && cd $(WEB_DIR) && npm run lint --if-present || true
+	cd $(WEB_DIR) && npm run lint
 
 ## build: compile server + worker binaries
 build:
@@ -98,7 +102,7 @@ build:
 
 .PHONY: help infra infra-down infra-reset dev docker-up api worker web \
         migrate-up migrate-down migrate-status migrate-new psql \
-        test test-api test-web lint build
+        test test-api test-api-v test-web e2e lint build
 
 ## test-api-v: verbose backend tests
 test-api-v:

@@ -3,7 +3,7 @@
 Live tracker for the plan in [`docs/PLAN.md`](docs/PLAN.md).
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
-**Current phase:** Phase 1 — Foundation (backend auth done; frontend next)
+**Current phase:** Phase 2 — Multi-Account (Phase 1 complete)
 
 ---
 
@@ -33,11 +33,12 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] Forgot password / reset password
 - [x] Email verification
 - [x] Rate limiting (IP + endpoint)
-- [ ] React + Vite + TS + Tailwind + shadcn/ui
-- [ ] TanStack Router + TanStack Query + Zustand
-- [ ] API client + auth guard
-- [ ] Login / Register / Forgot-password screens
-- [ ] Base app shell (sidebar + header)
+- [x] React + Vite + TS + Tailwind + shadcn/ui
+- [x] TanStack Router + TanStack Query
+- [~] Zustand — installed, no UI state to hold yet (see decision 13)
+- [x] API client + auth guard
+- [x] Login / Register / Forgot-password screens
+- [x] Base app shell (sidebar + header)
 
 ## Phase 2 — Multi-Account
 
@@ -163,3 +164,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 7 | Session tokens stored as SHA-256, passwords as Argon2id | Tokens are full-entropy random values with nothing to brute force; paying a slow-hash cost per authenticated request would be waste |
 | 8 | Password reset revokes all sessions; password change keeps only the current one | A reset may be driven by an attacker who already holds a session; a voluntary change should not log you out of the tab you are in |
 | 9 | Integration tests skip without `TEST_DATABASE_URL` | `go test ./...` stays green with no infra, while `make infra` turns the same tests into real end-to-end coverage |
+| 10 | Vite proxies `/api` and `/ws` to the Go API in dev | Keeps the session cookie same-origin, so dev matches production behind Nginx — no CORS preflights, no SameSite surprises |
+| 11 | Code-based TanStack Router, not file-based | No codegen step to keep in sync; the route tree stays explicit and fully typed |
+| 12 | Folders are one `/$folder` route, not eight | Inbox/Sent/Trash differ only by which label is queried; `INBOX` in `router.tsx` is the typed "go to inbox" target |
+| 13 | Zustand deferred until there is UI state worth holding | Phase 1 has none — TanStack Query owns the session; adding a store now would be empty ceremony |

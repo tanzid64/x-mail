@@ -8,3 +8,7 @@ tmp/
 bin/
 .DS_Store
 storage/
+test-results/
+playwright-report/
+blob-report/
+.playwright/

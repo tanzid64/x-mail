@@ -33,18 +33,23 @@ make migrate-up     # apply migrations       make migrate-down   # roll back one
 make migrate-new name=add_foo                # create a migration pair
 make api            # run the API on the host    make worker   # run the worker on the host
 make web            # vite dev server
-make test           # go test ./... + vitest
-make lint           # go vet + golangci-lint + eslint + tsc
+make test           # go test ./... + web typecheck
+make e2e            # playwright browser tests against the real stack
+make lint           # go vet + oxlint
 ```
 
-Single Go test: `cd apps/api && go test ./internal/auth/ -run TestArgon2Verify -v`
-Single web test: `cd apps/web && npx vitest run src/lib/api.test.ts -t "refreshes session"`
+Single Go test: `cd apps/api && go test ./internal/auth/ -run TestLoginRejectsBadCredentials -v`
+Single e2e test: `cd apps/web && npx playwright test -g "signs out"`
+
+`make e2e` starts the API and Vite itself (reusing them if already up), so only
+`make infra` has to be running first.
 
 **Local ports** are shifted away from the defaults because this machine already runs other
 stacks on 5432/6379/8080/5173: Postgres `5433`, Redis `6380`, API `8090`, web `5180`.
 
 Integration tests that need Postgres read `TEST_DATABASE_URL` and skip when it is unset, so
-`make infra` must be running for them to actually execute.
+`make infra` must be running for them to actually execute. A suite that reports `ok` having
+skipped everything proves nothing — check with `make test-api-v` when it matters.
 
 ## Architecture invariants
 
