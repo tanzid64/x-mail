@@ -180,3 +180,34 @@ test('an inbound reply joins the conversation it answers', async ({ page, reques
     await expect(row).toContainText('2')
   }).toPass({ timeout: 20_000 })
 })
+
+// The whole point of the websocket: mail appears without the reader doing
+// anything. This test never reloads the page.
+test('inbound mail appears live, without a reload', async ({ page, request }) => {
+  const { accountId, address } = await setUpReceivingAccount(page)
+
+  await page.goto('/inbox')
+  await expect(page.getByText('Nothing here')).toBeVisible()
+
+  // Wait for the socket to be established before sending, otherwise the event
+  // could be published to nobody and the test would pass for the wrong reason.
+  await page.waitForFunction(() => {
+    const entries = performance.getEntriesByType('resource')
+    return entries.some((entry) => entry.name.includes('/api/v1/ws'))
+  }, undefined, { timeout: 10_000 }).catch(() => {
+    // Resource timing does not always record websockets; the assertion below
+    // is the real check either way.
+  })
+
+  const body = JSON.stringify(
+    receivedEvent(address, 'Arrived while you watched', `<${randomUUID()}@example.com>`),
+  )
+  const response = await request.post(`${API_BASE}/webhooks/resend/${accountId}`, {
+    headers: signedHeaders(body),
+    data: body,
+  })
+  expect(response.status()).toBe(200)
+
+  // No page.goto and no reload — the row has to arrive on its own.
+  await expect(page.getByText('Arrived while you watched')).toBeVisible({ timeout: 20_000 })
+})

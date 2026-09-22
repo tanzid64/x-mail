@@ -162,6 +162,20 @@ func (r *Repository) SealedAPIKey(ctx context.Context, userID, accountID uuid.UU
 	return sealed, nil
 }
 
+// UserForAccount returns the owner of an account, for background jobs that
+// hold an account id and need to address its owner.
+func (r *Repository) UserForAccount(ctx context.Context, accountID uuid.UUID) (uuid.UUID, error) {
+	var userID uuid.UUID
+	err := r.db.QueryRow(ctx, `SELECT user_id FROM mail_accounts WHERE id = $1`, accountID).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return uuid.Nil, ErrNotFound
+		}
+		return uuid.Nil, err
+	}
+	return userID, nil
+}
+
 // AccountProvider returns which transport an account uses, without loading the
 // rest of the row. Used by background jobs that already hold an account id.
 func (r *Repository) AccountProvider(ctx context.Context, accountID uuid.UUID) (providers.Provider, error) {

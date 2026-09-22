@@ -23,6 +23,7 @@ import (
 	"github.com/dark/x-mail/api/internal/mailbox"
 	"github.com/dark/x-mail/api/internal/mailer"
 	"github.com/dark/x-mail/api/internal/ratelimit"
+	"github.com/dark/x-mail/api/internal/realtime"
 	"github.com/dark/x-mail/api/internal/server/middleware"
 	"github.com/dark/x-mail/api/internal/storage"
 	"github.com/dark/x-mail/api/internal/webhooks"
@@ -54,6 +55,7 @@ type Server struct {
 	mailbox  *mailbox.Handler
 	compose  *compose.Handler
 	webhooks *webhooks.Handler
+	hub      *realtime.Hub
 }
 
 // New wires the dependency graph and returns a ready router.
@@ -98,10 +100,12 @@ func New(deps Deps) (*Server, error) {
 		deps.Logger,
 	)
 
-	mailboxHandler := mailbox.NewHandler(
-		mailbox.NewService(mailbox.NewRepository(deps.DB), accountsRepo, deps.Logger),
-		deps.Logger,
-	)
+	publisher := realtime.NewPublisher(deps.Redis, deps.Logger)
+
+	mailboxService := mailbox.NewService(mailbox.NewRepository(deps.DB), accountsRepo, deps.Logger)
+	mailboxService.SetPublisher(publisher)
+
+	mailboxHandler := mailbox.NewHandler(mailboxService, deps.Logger)
 
 	store := deps.Storage
 	if store == nil {
@@ -146,6 +150,8 @@ func New(deps Deps) (*Server, error) {
 		deps.Logger,
 	)
 
+	hub := realtime.NewHub(deps.Redis, deps.Logger, cfg.CORSOrigins)
+
 	s := &Server{
 		deps:     deps,
 		router:   chi.NewRouter(),
@@ -155,6 +161,7 @@ func New(deps Deps) (*Server, error) {
 		mailbox:  mailboxHandler,
 		compose:  composeHandler,
 		webhooks: webhooksHandler,
+		hub:      hub,
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
@@ -162,6 +169,9 @@ func New(deps Deps) (*Server, error) {
 }
 
 func (s *Server) Handler() http.Handler { return s.router }
+
+// Hub exposes the realtime hub so the process can run its subscription loop.
+func (s *Server) Hub() *realtime.Hub { return s.hub }
 
 func (s *Server) setupMiddleware() {
 	s.router.Use(chimw.RequestID)
@@ -206,6 +216,10 @@ func (s *Server) setupRoutes() {
 		// handler resolves ownership through mail_accounts before touching a row.
 		r.Group(func(r chi.Router) {
 			r.Use(s.auth.RequireAuth)
+
+			// The socket is authenticated by the session cookie like any other
+			// request, and then only ever carries that user's events.
+			r.Get("/ws", s.hub.Handler)
 
 			r.Route("/mail-accounts", s.accounts.RoutesAccounts)
 			r.Route("/domains", s.accounts.RoutesDomains)

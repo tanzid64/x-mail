@@ -15,6 +15,7 @@ import (
 
 	"github.com/dark/x-mail/api/internal/accounts"
 	"github.com/dark/x-mail/api/internal/mailbox"
+	"github.com/dark/x-mail/api/internal/realtime"
 	"github.com/dark/x-mail/api/internal/storage"
 	"github.com/dark/x-mail/api/internal/webhooks"
 )
@@ -25,13 +26,12 @@ const maxInboundAttachmentBytes = 25 << 20
 // ProcessEventHandler acts on a recorded provider webhook: either storing a
 // received message, or updating the delivery state of one we sent.
 type ProcessEventHandler struct {
-	events   *webhooks.Repository
-	mailbox  *mailbox.Repository
-	accounts *accounts.Repository
-	storage  storage.Storage
-	// publish notifies connected clients. Optional until realtime lands.
-	publish func(ctx context.Context, accountID uuid.UUID, event string, data map[string]any)
-	logger  *slog.Logger
+	events    *webhooks.Repository
+	mailbox   *mailbox.Repository
+	accounts  *accounts.Repository
+	storage   storage.Storage
+	publisher *realtime.Publisher
+	logger    *slog.Logger
 }
 
 func NewProcessEventHandler(
@@ -50,17 +50,25 @@ func NewProcessEventHandler(
 	}
 }
 
-// SetPublisher installs the realtime publisher.
-func (h *ProcessEventHandler) SetPublisher(
-	publish func(ctx context.Context, accountID uuid.UUID, event string, data map[string]any),
-) {
-	h.publish = publish
+// SetPublisher installs the realtime publisher. It is optional so the handler
+// can be built and tested without Redis.
+func (h *ProcessEventHandler) SetPublisher(publisher *realtime.Publisher) {
+	h.publisher = publisher
 }
 
-func (h *ProcessEventHandler) notify(ctx context.Context, accountID uuid.UUID, event string, data map[string]any) {
-	if h.publish != nil {
-		h.publish(ctx, accountID, event, data)
+// notify tells the owning user's open browsers that something changed.
+// Realtime is an optimisation: a client that misses an event still sees the
+// change on its next refetch, so a failure here never fails the job.
+func (h *ProcessEventHandler) notify(ctx context.Context, userID, accountID uuid.UUID, event string, data map[string]any) {
+	if h.publisher == nil || userID == uuid.Nil {
+		return
 	}
+	h.publisher.PublishQuietly(ctx, realtime.Event{
+		Type:          event,
+		UserID:        userID,
+		MailAccountID: accountID,
+		Data:          data,
+	})
 }
 
 // ProcessTask handles one recorded event.
@@ -217,10 +225,9 @@ func (h *ProcessEventHandler) handleReceived(
 	h.logger.InfoContext(ctx, "stored inbound message",
 		"message_id", stored.ID, "thread_id", stored.ThreadID, "from", sender)
 
-	h.notify(ctx, route.MailAccountID, "email.received", map[string]any{
-		"mail_account_id": route.MailAccountID,
-		"thread_id":       stored.ThreadID,
-		"message_id":      stored.ID,
+	h.notify(ctx, route.UserID, route.MailAccountID, realtime.EventEmailReceived, map[string]any{
+		"thread_id":  stored.ThreadID,
+		"message_id": stored.ID,
 	})
 	return "", nil
 }
@@ -332,12 +339,15 @@ func (h *ProcessEventHandler) handleDeliveryEvent(
 	h.logger.InfoContext(ctx, "applied delivery event",
 		"type", envelope.Type, "message_id", message.ID)
 
-	h.notify(ctx, accountID, "email.updated", map[string]any{
-		"mail_account_id": accountID,
-		"thread_id":       message.ThreadID,
-		"message_id":      message.ID,
-		"status":          envelope.Type,
-	})
+	// A delivery event concerns a message we sent, so the owner is whoever owns
+	// the account it went out from.
+	if userID, err := h.accounts.UserForAccount(ctx, accountID); err == nil {
+		h.notify(ctx, userID, accountID, realtime.EventEmailUpdated, map[string]any{
+			"thread_id":  message.ThreadID,
+			"message_id": message.ID,
+			"status":     envelope.Type,
+		})
+	}
 	return "", nil
 }
 

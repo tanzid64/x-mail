@@ -18,6 +18,7 @@ import (
 	"github.com/dark/x-mail/api/internal/database"
 	"github.com/dark/x-mail/api/internal/logging"
 	"github.com/dark/x-mail/api/internal/mailbox"
+	"github.com/dark/x-mail/api/internal/realtime"
 	"github.com/dark/x-mail/api/internal/redisx"
 	"github.com/dark/x-mail/api/internal/storage"
 	"github.com/dark/x-mail/api/internal/webhooks"
@@ -88,19 +89,23 @@ func run() error {
 		health.Start()
 	}
 
+	// Inbound mail is published so an open browser sees it without polling.
+	processEvents := worker.NewProcessEventHandler(
+		webhooks.NewRepository(pool),
+		mailbox.NewRepository(pool),
+		accounts.NewRepository(pool),
+		store,
+		logger,
+	)
+	processEvents.SetPublisher(realtime.NewPublisher(rdb, logger))
+
 	server := worker.New(worker.Deps{
 		Redis:  worker.RedisOpt(rdb),
 		Logger: logger,
 		SendEmail: worker.NewSendEmailHandler(
 			compose.NewRepository(pool), accountsService, store, logger,
 		),
-		ProcessEvent: worker.NewProcessEventHandler(
-			webhooks.NewRepository(pool),
-			mailbox.NewRepository(pool),
-			accounts.NewRepository(pool),
-			store,
-			logger,
-		),
+		ProcessEvent: processEvents,
 	})
 
 	// Run blocks, so shutdown is driven from the signal context.

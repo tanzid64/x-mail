@@ -3,7 +3,7 @@
 Live tracker for the plan in [`docs/PLAN.md`](docs/PLAN.md).
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
-**Current phase:** Phase 6 — Realtime (Phases 1–5 complete)
+**Current phase:** Phase 7 — Gmail Features (Phases 1–6 complete; MVP scope done)
 
 ---
 
@@ -92,11 +92,11 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
 ## Phase 6 — Realtime
 
-- [ ] WebSocket endpoint `/ws` with session auth
-- [ ] Redis Pub/Sub fan-out
-- [ ] Event publishing from API + worker
-- [ ] Frontend WS client → query invalidation
-- [ ] Unread count updates
+- [x] WebSocket endpoint `/ws` with session auth
+- [x] Redis Pub/Sub fan-out
+- [x] Event publishing from API + worker
+- [x] Frontend WS client → query invalidation
+- [x] Unread count updates
 
 ## Phase 7 — Gmail Features
 
@@ -147,7 +147,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] HTML sanitization of inbound mail
 - [ ] Observability (metrics, tracing)
 - [ ] Abuse prevention / sending limits
-- [ ] Nginx + production Docker setup
+- [~] Nginx + production Docker setup — `deploy/nginx.conf` written; production compose pending
 
 ---
 
@@ -191,3 +191,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 34 | Inbound HTML sanitised once on arrival into its own column | Cost paid per message rather than per view, and the untouched original means a sanitiser fix can be re-applied instead of losing the message |
 | 35 | `InsertMessage` sanitises, so no caller has to remember | The seeder forgot, and inbound mail rendered as plain text; one guarantee beats N call sites |
 | 36 | Delivery status only moves forward | Providers reorder events; a late "sent" must not undo a recorded "delivered" |
+| 37 | Realtime events carry ids, never content | The client refetches through its normal authorized endpoints, so a bug in the fan-out cannot leak mail |
+| 38 | Redis pub/sub between API and worker, one pattern subscription per process | The worker stores the mail but the API holds the socket; this also works unchanged across several API instances |
+| 39 | A slow websocket client is dropped, not waited on | Blocking on one stalled browser would hold up the fan-out for everyone |
+| 40 | Websocket origins configured explicitly, not inferred from Host | Any proxy that rewrites Host breaks the default Origin-vs-Host check — which is exactly what happened behind the dev proxy |

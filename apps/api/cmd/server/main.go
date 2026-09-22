@@ -79,6 +79,13 @@ func run() error {
 		IdleTimeout:       120 * time.Second,
 	}
 
+	// The hub fans Redis events out to the sockets this process holds.
+	go func() {
+		if err := apiServer.Hub().Run(ctx); err != nil {
+			logger.Error("realtime hub stopped", "error", err)
+		}
+	}()
+
 	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("http server listening", "addr", cfg.HTTPAddr, "env", cfg.Env)

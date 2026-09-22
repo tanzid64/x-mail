@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+
+	"github.com/dark/x-mail/api/internal/realtime"
 )
 
 // AccountResolver supplies the set of mail accounts a request may read.
@@ -16,14 +18,41 @@ type AccountResolver interface {
 	AccountIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error)
 }
 
+// Publisher notifies a user's other open browsers that the mailbox changed.
+// Optional: the mailbox works without it, clients just refetch on their own.
+type Publisher interface {
+	PublishQuietly(ctx context.Context, event realtime.Event)
+}
+
 type Service struct {
-	repo     *Repository
-	accounts AccountResolver
-	logger   *slog.Logger
+	repo      *Repository
+	accounts  AccountResolver
+	publisher Publisher
+	logger    *slog.Logger
 }
 
 func NewService(repo *Repository, accountResolver AccountResolver, logger *slog.Logger) *Service {
 	return &Service{repo: repo, accounts: accountResolver, logger: logger}
+}
+
+// SetPublisher installs the realtime publisher.
+func (s *Service) SetPublisher(publisher Publisher) { s.publisher = publisher }
+
+// notifyThreads tells the user's other tabs that these threads changed, so a
+// message archived on a laptop disappears from the phone too.
+func (s *Service) notifyThreads(ctx context.Context, userID uuid.UUID, action Action, threadIDs []uuid.UUID) {
+	if s.publisher == nil || len(threadIDs) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(threadIDs))
+	for _, id := range threadIDs {
+		ids = append(ids, id.String())
+	}
+	s.publisher.PublishQuietly(ctx, realtime.Event{
+		Type:   realtime.EventThreadUpdated,
+		UserID: userID,
+		Data:   map[string]any{"action": string(action), "thread_ids": ids},
+	})
 }
 
 // Scope resolves which accounts a request may touch.
@@ -145,6 +174,9 @@ func (s *Service) Apply(ctx context.Context, userID uuid.UUID, action Action, th
 	if len(scope) == 0 || len(threadIDs) == 0 {
 		return 0, nil
 	}
+
+	// Whatever the outcome, the user's other tabs should refetch.
+	defer s.notifyThreads(ctx, userID, action, threadIDs)
 
 	switch action {
 	case ActionRead:

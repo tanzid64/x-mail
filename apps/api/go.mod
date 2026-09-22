@@ -31,6 +31,7 @@ require (
 	github.com/aws/smithy-go v1.28.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/hibiken/asynq v0.26.0 // indirect

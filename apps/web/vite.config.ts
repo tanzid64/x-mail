@@ -18,8 +18,9 @@ export default defineConfig({
     // cookie behaves exactly as it will in production behind Nginx — no CORS
     // preflights and no SameSite surprises.
     proxy: {
-      '/api': { target: apiTarget, changeOrigin: true },
-      '/ws': { target: apiTarget.replace(/^http/, 'ws'), ws: true },
+      // ws: true is required — the realtime endpoint lives at /api/v1/ws, so
+      // the same rule has to carry the upgrade as well as ordinary requests.
+      '/api': { target: apiTarget, changeOrigin: true, ws: true },
     },
   },
 })
