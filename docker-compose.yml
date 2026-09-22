@@ -1,0 +1,69 @@
+name: x-mail
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: xmail
+      POSTGRES_PASSWORD: xmail
+      POSTGRES_DB: xmail
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xmail -d xmail"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Application containers are opt-in: `docker compose --profile app up`.
+  # Day-to-day development runs the API/worker/web on the host against the
+  # infra services above (`make infra` + `make api` / `make worker` / `make web`).
+  api:
+    profiles: ["app"]
+    build:
+      context: ./apps/api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://xmail:xmail@postgres:5432/xmail?sslmode=disable
+      REDIS_ADDR: redis:6379
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    profiles: ["app"]
+    build:
+      context: ./apps/api
+    command: ["/app/worker"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://xmail:xmail@postgres:5432/xmail?sslmode=disable
+      REDIS_ADDR: redis:6379
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+*.log
+tmp/
+bin/
+.DS_Store
+storage/
