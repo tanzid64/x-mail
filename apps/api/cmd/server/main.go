@@ -65,9 +65,14 @@ func run() error {
 		}
 	}
 
+	apiServer, err := server.New(server.Deps{Config: cfg, DB: pool, Redis: rdb, Logger: logger})
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           server.New(server.Deps{Config: cfg, DB: pool, Redis: rdb, Logger: logger}).Handler(),
+		Handler:           apiServer.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,

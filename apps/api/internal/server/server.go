@@ -14,8 +14,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/dark/x-mail/api/internal/accounts"
 	"github.com/dark/x-mail/api/internal/auth"
 	"github.com/dark/x-mail/api/internal/config"
+	"github.com/dark/x-mail/api/internal/crypto"
 	"github.com/dark/x-mail/api/internal/httpx"
 	"github.com/dark/x-mail/api/internal/mailer"
 	"github.com/dark/x-mail/api/internal/ratelimit"
@@ -27,19 +29,33 @@ type Deps struct {
 	DB     *pgxpool.Pool
 	Redis  *redis.Client
 	Logger *slog.Logger
+
+	// ProviderFactory overrides how transport clients are built. Tests supply a
+	// fake here; production leaves it nil and gets the real implementations.
+	ProviderFactory accounts.ProviderFactory
 }
 
 type Server struct {
-	deps    Deps
-	router  chi.Router
-	limiter *ratelimit.Limiter
-	auth    *auth.Handler
+	deps     Deps
+	router   chi.Router
+	limiter  *ratelimit.Limiter
+	auth     *auth.Handler
+	accounts *accounts.Handler
 }
 
-func New(deps Deps) *Server {
+// New wires the dependency graph and returns a ready router.
+//
+// It fails rather than returns an error only for configuration that Load has
+// already validated — the master key length in particular.
+func New(deps Deps) (*Server, error) {
 	cfg := deps.Config
 
 	limiter := ratelimit.New(deps.Redis, deps.Logger)
+
+	sealer, err := crypto.NewSealer(cfg.EncryptionMasterKey)
+	if err != nil {
+		return nil, err
+	}
 
 	authHandler := auth.NewHandler(
 		auth.NewService(
@@ -57,15 +73,26 @@ func New(deps Deps) *Server {
 		deps.Logger,
 	)
 
+	providerFactory := deps.ProviderFactory
+	if providerFactory == nil {
+		providerFactory = accounts.NewProviderFactory(cfg.ResendBaseURL)
+	}
+
+	accountsHandler := accounts.NewHandler(
+		accounts.NewService(accounts.NewRepository(deps.DB), sealer, providerFactory, deps.Logger),
+		deps.Logger,
+	)
+
 	s := &Server{
-		deps:    deps,
-		router:  chi.NewRouter(),
-		limiter: limiter,
-		auth:    authHandler,
+		deps:     deps,
+		router:   chi.NewRouter(),
+		limiter:  limiter,
+		auth:     authHandler,
+		accounts: accountsHandler,
 	}
 	s.setupMiddleware()
 	s.setupRoutes()
-	return s
+	return s, nil
 }
 
 func (s *Server) Handler() http.Handler { return s.router }
@@ -103,6 +130,16 @@ func (s *Server) setupRoutes() {
 		r.Route("/me", func(r chi.Router) {
 			r.Use(s.auth.RequireAuth)
 			s.auth.RoutesMe(r)
+		})
+
+		// Everything below this point is scoped to the signed-in user, and each
+		// handler resolves ownership through mail_accounts before touching a row.
+		r.Group(func(r chi.Router) {
+			r.Use(s.auth.RequireAuth)
+
+			r.Route("/mail-accounts", s.accounts.RoutesAccounts)
+			r.Route("/domains", s.accounts.RoutesDomains)
+			r.Route("/addresses", s.accounts.RoutesAddresses)
 		})
 	})
 

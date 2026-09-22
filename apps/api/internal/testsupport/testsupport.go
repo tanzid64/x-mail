@@ -4,6 +4,11 @@
 // Tests skip themselves when TEST_DATABASE_URL is unset, so `go test ./...`
 // still passes on a machine with no infrastructure running, while `make infra`
 // turns the same tests into genuine end-to-end coverage.
+//
+// Every package shares one test database and Truncate empties it, so packages
+// must not run concurrently. `make test-api` passes `-p 1` for exactly this
+// reason — running `go test ./...` directly produces confusing cross-package
+// failures that look like real bugs.
 package testsupport
 
 import (

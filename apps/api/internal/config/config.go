@@ -45,6 +45,10 @@ type Config struct {
 	SystemMailFrom     string
 
 	ResendWebhookSecret string
+
+	// ResendBaseURL overrides the Resend API endpoint. It exists so end-to-end
+	// tests can point the stack at a stub provider, and is empty in production.
+	ResendBaseURL string
 }
 
 func (c Config) IsProduction() bool { return c.Env == "production" }
@@ -92,6 +96,7 @@ func Load() (*Config, error) {
 		SystemMailFrom:     def("SYSTEM_MAIL_FROM", "x-mail <noreply@example.com>"),
 
 		ResendWebhookSecret: os.Getenv("RESEND_WEBHOOK_SECRET"),
+		ResendBaseURL:       os.Getenv("RESEND_BASE_URL"),
 	}
 
 	// Session secret signs session cookies; anything shorter than 32 bytes is
@@ -127,6 +132,11 @@ func Load() (*Config, error) {
 
 	if cfg.IsProduction() && !cfg.SessionCookieSecure {
 		problems = append(problems, "SESSION_COOKIE_SECURE must be true in production")
+	}
+	// Redirecting provider traffic in production would send real credentials to
+	// whatever host was configured.
+	if cfg.IsProduction() && cfg.ResendBaseURL != "" {
+		problems = append(problems, "RESEND_BASE_URL must not be set in production")
 	}
 
 	if len(problems) > 0 {

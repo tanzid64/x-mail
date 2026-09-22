@@ -80,8 +80,11 @@ psql:
 test: test-api test-web
 
 ## test-api: go tests (integration tests need `make infra`)
+# -p 1 runs one package at a time: the integration tests share a single test
+# database and truncate it between tests, so parallel packages would delete
+# each other's rows and fail in ways that look like real bugs.
 test-api:
-	cd $(API_DIR) && go test ./...
+	cd $(API_DIR) && go test -p 1 ./...
 
 ## test-web: frontend typecheck (unit tests land with the mailbox UI)
 test-web:
@@ -106,4 +109,4 @@ build:
 
 ## test-api-v: verbose backend tests
 test-api-v:
-	cd $(API_DIR) && go test ./... -v -count=1
+	cd $(API_DIR) && go test -p 1 ./... -v -count=1
