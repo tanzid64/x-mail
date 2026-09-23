@@ -8,7 +8,10 @@ import {
 import type { QueryClient } from '@tanstack/react-query'
 
 import { sessionQueryOptions } from '@/features/auth/api'
+import { SiteLayout } from '@/components/site/site-layout'
 import { AppLayout } from '@/routes/app-layout'
+import { DocsLayout, DocsPage } from '@/routes/docs'
+import { HomePage } from '@/routes/home'
 import { ForgotPasswordPage } from '@/routes/forgot-password'
 import { LoginPage } from '@/routes/login'
 import { MailboxPage } from '@/routes/mailbox'
@@ -91,6 +94,47 @@ const verifyEmailRoute = createRoute({
   component: VerifyEmailPage,
 })
 
+// ----------------------------------------------------------------- public --
+// The marketing home page and the documentation. Neither needs a session:
+// someone evaluating x-mail, or integrating against it, should not have to
+// create an account to read about it first.
+
+const siteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: '_site',
+  component: SiteLayout,
+})
+
+const homeRoute = createRoute({
+  getParentRoute: () => siteRoute,
+  path: '/',
+  beforeLoad: async ({ context }) => {
+    // Someone already signed in wants their mail, not the pitch.
+    if (await currentUser(context.queryClient)) {
+      throw redirect(INBOX)
+    }
+  },
+  component: HomePage,
+})
+
+const docsRoute = createRoute({
+  getParentRoute: () => siteRoute,
+  path: '/docs',
+  component: DocsLayout,
+})
+
+const docsIndexRoute = createRoute({
+  getParentRoute: () => docsRoute,
+  path: '/',
+  component: DocsPage,
+})
+
+const docsPageRoute = createRoute({
+  getParentRoute: () => docsRoute,
+  path: '/$page',
+  component: DocsPage,
+})
+
 // --------------------------------------------------------------- protected --
 
 const appLayoutRoute = createRoute({
@@ -149,16 +193,8 @@ const settingsIndexRoute = createRoute({
   },
 })
 
-const indexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/',
-  beforeLoad: () => {
-    throw redirect(INBOX)
-  },
-})
-
 const routeTree = rootRoute.addChildren([
-  indexRoute,
+  siteRoute.addChildren([homeRoute, docsRoute.addChildren([docsIndexRoute, docsPageRoute])]),
   loginRoute,
   registerRoute,
   forgotPasswordRoute,
