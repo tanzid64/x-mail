@@ -70,6 +70,20 @@ expensive to undo, so treat them as fixed unless the user says otherwise.
 mail account carries its own provider credentials and its own mailbox. Never add a `user_id`
 column to mailbox tables — ownership is always resolved through `mail_account_id`.
 
+**Every request is authenticated by a session cookie *or* an API token.** `RequireAuth` accepts
+both, so a route added behind it works for the browser and for a third party without further
+thought. A presented `Authorization: Bearer` is never silently retried as a cookie — an expired
+key must be told it expired. Two things stay browser-only, behind `RequireSession`: minting or
+revoking tokens, and changing the password. A token that could do either would make its own
+expiry a suggestion. Tokens are SHA-256 at rest like sessions, the secret is returned exactly
+once, and the four lifetimes (15d/30d/1y/never) are validated server-side.
+
+**A token may be confined to one mail account.** When it is, `auth.AccountScopeArg(ctx)` is bound
+into the ownership predicate of every user-scoped query — `($n::uuid IS NULL OR a.id = $n)` — so
+the restriction is applied in SQL beside the user check rather than threaded through signatures.
+A query that filters by user but not by token scope is a silent leak between mailboxes. Anything
+outside the restriction reads as 404.
+
 **Every mailbox query is scoped by mail account, and every mail account is authorized against the
 session user.** `messages/threads/drafts/labels → mail_accounts → users`. The frontend's selected
 account is a hint, never an authorization decision; resolve and check ownership server-side on

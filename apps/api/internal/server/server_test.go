@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/dark/x-mail/api/internal/config"
 	"github.com/dark/x-mail/api/internal/providers"
 	"github.com/dark/x-mail/api/internal/server"
@@ -54,6 +56,9 @@ type client struct {
 	t       *testing.T
 	handler http.Handler
 	cookies []*http.Cookie
+	// pool is the same database the server uses, for the few assertions that
+	// have to look at what was actually stored.
+	pool *pgxpool.Pool
 }
 
 func newTestServer(t *testing.T) *client {
@@ -87,7 +92,7 @@ func newTestServer(t *testing.T) *client {
 	if err != nil {
 		t.Fatalf("build server: %v", err)
 	}
-	return &client{t: t, handler: srv.Handler()}
+	return &client{t: t, handler: srv.Handler(), pool: pool}
 }
 
 func (c *client) do(method, path string, body any) (int, map[string]any) {

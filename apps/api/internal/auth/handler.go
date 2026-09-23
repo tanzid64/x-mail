@@ -51,7 +51,9 @@ func (h *Handler) RoutesPublic(r chi.Router) {
 func (h *Handler) RoutesMe(r chi.Router) {
 	r.Get("/", h.handleMe)
 	r.Patch("/", h.handleUpdateMe)
-	r.Post("/password", h.handleChangePassword)
+	// A token must not be able to change the password: that would let a stolen
+	// key lock the owner out of the settings page where it is revoked.
+	r.With(h.RequireSession).Post("/password", h.handleChangePassword)
 	r.Post("/resend-verification", h.handleResendVerification)
 }
 

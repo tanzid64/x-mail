@@ -11,8 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/dark/x-mail/api/internal/auth"
 	"github.com/dark/x-mail/api/internal/providers"
 )
+
+// tokenScope is the one mail account a restricted API token may touch, or nil
+// when the request is a session or an unrestricted token.
+//
+// It is read from the request context and applied in SQL beside the ownership
+// predicate rather than threaded through every signature — the same reasoning
+// that puts ownership in the query: a caller cannot forget what it never had to
+// remember, and a query that filters by user but not by token scope would be a
+// silent leak between mailboxes.
+func tokenScope(ctx context.Context) any { return auth.AccountScopeArg(ctx) }
 
 var (
 	ErrNotFound     = errors.New("accounts: not found")
@@ -67,6 +78,8 @@ func (r *Repository) CreateAccount(ctx context.Context, params CreateAccountPara
 	err := r.inTx(ctx, func(tx pgx.Tx) error {
 		var existing int
 		if err := tx.QueryRow(ctx,
+			// Unscoped by design: a restricted token cannot reach CreateAccount at
+			// all (see Service.Connect), so this only ever runs for a full session.
 			`SELECT count(*) FROM mail_accounts WHERE user_id = $1`, params.UserID).Scan(&existing); err != nil {
 			return err
 		}
@@ -94,8 +107,8 @@ func (r *Repository) CreateAccount(ctx context.Context, params CreateAccountPara
 func (r *Repository) ListAccounts(ctx context.Context, userID uuid.UUID) ([]MailAccount, error) {
 	rows, err := r.db.Query(ctx,
 		`SELECT `+accountColumns+` FROM mail_accounts
-		  WHERE user_id = $1
-		  ORDER BY is_default DESC, lower(name)`, userID)
+		  WHERE user_id = $1 AND ($2::uuid IS NULL OR id = $2)
+		  ORDER BY is_default DESC, lower(name)`, userID, tokenScope(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +130,9 @@ func (r *Repository) ListAccounts(ctx context.Context, userID uuid.UUID) ([]Mail
 // element of it. Callers never take account ids from the client.
 func (r *Repository) AccountIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
 	rows, err := r.db.Query(ctx,
-		`SELECT id FROM mail_accounts WHERE user_id = $1 ORDER BY created_at`, userID)
+		`SELECT id FROM mail_accounts
+		  WHERE user_id = $1 AND ($2::uuid IS NULL OR id = $2)
+		  ORDER BY created_at`, userID, tokenScope(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -141,8 +156,9 @@ func (r *Repository) AccountIDs(ctx context.Context, userID uuid.UUID) ([]uuid.U
 // user's account is indistinguishable from one that does not exist.
 func (r *Repository) GetAccount(ctx context.Context, userID, accountID uuid.UUID) (*MailAccount, error) {
 	return scanAccount(r.db.QueryRow(ctx,
-		`SELECT `+accountColumns+` FROM mail_accounts WHERE id = $1 AND user_id = $2`,
-		accountID, userID))
+		`SELECT `+accountColumns+` FROM mail_accounts
+		  WHERE id = $1 AND user_id = $2 AND ($3::uuid IS NULL OR id = $3)`,
+		accountID, userID, tokenScope(ctx)))
 }
 
 // SealedAPIKey returns the encrypted credential for an account the user owns.
@@ -151,8 +167,9 @@ func (r *Repository) GetAccount(ctx context.Context, userID, accountID uuid.UUID
 func (r *Repository) SealedAPIKey(ctx context.Context, userID, accountID uuid.UUID) ([]byte, error) {
 	var sealed []byte
 	err := r.db.QueryRow(ctx,
-		`SELECT api_key_encrypted FROM mail_accounts WHERE id = $1 AND user_id = $2`,
-		accountID, userID).Scan(&sealed)
+		`SELECT api_key_encrypted FROM mail_accounts
+		  WHERE id = $1 AND user_id = $2 AND ($3::uuid IS NULL OR id = $3)`,
+		accountID, userID, tokenScope(ctx)).Scan(&sealed)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -218,9 +235,9 @@ func (r *Repository) UpdateAccount(ctx context.Context, userID, accountID uuid.U
 		     name      = COALESCE($3, name),
 		     color     = COALESCE($4, color),
 		     is_active = COALESCE($5, is_active)
-		  WHERE id = $1 AND user_id = $2
+		  WHERE id = $1 AND user_id = $2 AND ($6::uuid IS NULL OR id = $6)
 		  RETURNING `+accountColumns,
-		accountID, userID, params.Name, params.Color, params.IsActive))
+		accountID, userID, params.Name, params.Color, params.IsActive, tokenScope(ctx)))
 	if err != nil {
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
@@ -238,9 +255,9 @@ func (r *Repository) RotateAPIKey(ctx context.Context, userID, accountID uuid.UU
 		`UPDATE mail_accounts
 		    SET api_key_encrypted = $3, api_key_hint = $4,
 		        status = '`+StatusActive+`', status_message = '', last_checked_at = now()
-		  WHERE id = $1 AND user_id = $2
+		  WHERE id = $1 AND user_id = $2 AND ($5::uuid IS NULL OR id = $5)
 		  RETURNING `+accountColumns,
-		accountID, userID, sealed, hint))
+		accountID, userID, sealed, hint, tokenScope(ctx)))
 }
 
 // SetWebhookSecret stores the signing secret for an account's provider
@@ -249,9 +266,9 @@ func (r *Repository) RotateAPIKey(ctx context.Context, userID, accountID uuid.UU
 func (r *Repository) SetWebhookSecret(ctx context.Context, userID, accountID uuid.UUID, sealed []byte, hint string) (*MailAccount, error) {
 	return scanAccount(r.db.QueryRow(ctx,
 		`UPDATE mail_accounts SET webhook_secret_encrypted = $3, webhook_secret_hint = $4
-		  WHERE id = $1 AND user_id = $2
+		  WHERE id = $1 AND user_id = $2 AND ($5::uuid IS NULL OR id = $5)
 		  RETURNING `+accountColumns,
-		accountID, userID, sealed, hint))
+		accountID, userID, sealed, hint, tokenScope(ctx)))
 }
 
 // MarkStatus records the outcome of a credential check. It takes no user id
@@ -269,14 +286,19 @@ func (r *Repository) SetDefault(ctx context.Context, userID, accountID uuid.UUID
 	return r.inTx(ctx, func(tx pgx.Tx) error {
 		var owned bool
 		if err := tx.QueryRow(ctx,
-			`SELECT true FROM mail_accounts WHERE id = $1 AND user_id = $2`,
-			accountID, userID).Scan(&owned); err != nil {
+			`SELECT true FROM mail_accounts
+			  WHERE id = $1 AND user_id = $2 AND ($3::uuid IS NULL OR id = $3)`,
+			accountID, userID, tokenScope(ctx)).Scan(&owned); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrNotFound
 			}
 			return err
 		}
 
+		// These two touch accounts outside a restricted token's scope, which is
+		// inherent rather than a leak: the ownership check above is scoped, so a
+		// restricted token can only ever name its own account here, and moving an
+		// exclusive flag onto it necessarily clears it from wherever it was.
 		if _, err := tx.Exec(ctx,
 			`UPDATE mail_accounts SET is_default = false WHERE user_id = $1 AND is_default`, userID); err != nil {
 			return err
@@ -294,8 +316,10 @@ func (r *Repository) DeleteAccount(ctx context.Context, userID, accountID uuid.U
 	return r.inTx(ctx, func(tx pgx.Tx) error {
 		var wasDefault bool
 		err := tx.QueryRow(ctx,
-			`DELETE FROM mail_accounts WHERE id = $1 AND user_id = $2 RETURNING is_default`,
-			accountID, userID).Scan(&wasDefault)
+			`DELETE FROM mail_accounts
+			  WHERE id = $1 AND user_id = $2 AND ($3::uuid IS NULL OR id = $3)
+			  RETURNING is_default`,
+			accountID, userID, tokenScope(ctx)).Scan(&wasDefault)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrNotFound
@@ -306,6 +330,9 @@ func (r *Repository) DeleteAccount(ctx context.Context, userID, accountID uuid.U
 			return nil
 		}
 
+		// Promoting a survivor reaches outside a restricted token's scope for the
+		// same reason: the delete above was scoped, and a user must not be left
+		// with no default account.
 		_, err = tx.Exec(ctx,
 			`UPDATE mail_accounts SET is_default = true
 			  WHERE id = (SELECT id FROM mail_accounts WHERE user_id = $1 ORDER BY created_at LIMIT 1)`,
@@ -436,8 +463,8 @@ func (r *Repository) ListDomainsForUser(ctx context.Context, userID uuid.UUID) (
 		        d.records, d.last_synced_at, d.created_at, d.updated_at
 		   FROM domains d
 		   JOIN mail_accounts a ON a.id = d.mail_account_id
-		  WHERE a.user_id = $1
-		  ORDER BY d.domain`, userID)
+		  WHERE a.user_id = $1 AND ($2::uuid IS NULL OR a.id = $2)
+		  ORDER BY d.domain`, userID, tokenScope(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +489,8 @@ func (r *Repository) GetDomain(ctx context.Context, userID, domainID uuid.UUID) 
 		        d.records, d.last_synced_at, d.created_at, d.updated_at
 		   FROM domains d
 		   JOIN mail_accounts a ON a.id = d.mail_account_id
-		  WHERE d.id = $1 AND a.user_id = $2`, domainID, userID))
+		  WHERE d.id = $1 AND a.user_id = $2 AND ($3::uuid IS NULL OR a.id = $3)`,
+		domainID, userID, tokenScope(ctx)))
 }
 
 // ------------------------------------------------------------ addresses ----
@@ -530,16 +558,16 @@ func (r *Repository) ListAddressesForUser(ctx context.Context, userID uuid.UUID)
 	return r.queryAddresses(ctx,
 		addressSelect+`
 		   JOIN mail_accounts a ON a.id = d.mail_account_id
-		  WHERE a.user_id = $1
-		  ORDER BY d.domain, m.email`, userID)
+		  WHERE a.user_id = $1 AND ($2::uuid IS NULL OR a.id = $2)
+		  ORDER BY d.domain, m.email`, userID, tokenScope(ctx))
 }
 
 func (r *Repository) ListAddressesForAccount(ctx context.Context, userID, accountID uuid.UUID) ([]MailAddress, error) {
 	return r.queryAddresses(ctx,
 		addressSelect+`
 		   JOIN mail_accounts a ON a.id = d.mail_account_id
-		  WHERE a.user_id = $1 AND a.id = $2
-		  ORDER BY d.domain, m.email`, userID, accountID)
+		  WHERE a.user_id = $1 AND a.id = $2 AND ($3::uuid IS NULL OR a.id = $3)
+		  ORDER BY d.domain, m.email`, userID, accountID, tokenScope(ctx))
 }
 
 func (r *Repository) queryAddresses(ctx context.Context, query string, args ...any) ([]MailAddress, error) {
@@ -564,7 +592,8 @@ func (r *Repository) GetAddress(ctx context.Context, userID, addressID uuid.UUID
 	return scanAddress(r.db.QueryRow(ctx,
 		addressSelect+`
 		   JOIN mail_accounts a ON a.id = d.mail_account_id
-		  WHERE m.id = $1 AND a.user_id = $2`, addressID, userID))
+		  WHERE m.id = $1 AND a.user_id = $2 AND ($3::uuid IS NULL OR a.id = $3)`,
+		addressID, userID, tokenScope(ctx)))
 }
 
 type UpdateAddressParams struct {
@@ -584,11 +613,12 @@ func (r *Repository) UpdateAddress(ctx context.Context, userID, addressID uuid.U
 		       AND EXISTS (
 		           SELECT 1 FROM domains d
 		             JOIN mail_accounts a ON a.id = d.mail_account_id
-		            WHERE d.id = m.domain_id AND a.user_id = $2)
+		            WHERE d.id = m.domain_id AND a.user_id = $2
+		              AND ($5::uuid IS NULL OR a.id = $5))
 		     RETURNING m.id
 		 )
 		 `+addressSelect+` WHERE m.id IN (SELECT id FROM updated)`,
-		addressID, userID, params.DisplayName, params.IsActive))
+		addressID, userID, params.DisplayName, params.IsActive, tokenScope(ctx)))
 }
 
 // SetDefaultAddress makes one address the default sender for its domain.
@@ -599,7 +629,8 @@ func (r *Repository) SetDefaultAddress(ctx context.Context, userID, addressID uu
 			`SELECT m.domain_id FROM mail_addresses m
 			   JOIN domains d ON d.id = m.domain_id
 			   JOIN mail_accounts a ON a.id = d.mail_account_id
-			  WHERE m.id = $1 AND a.user_id = $2`, addressID, userID).Scan(&domainID)
+			  WHERE m.id = $1 AND a.user_id = $2 AND ($3::uuid IS NULL OR a.id = $3)`,
+			addressID, userID, tokenScope(ctx)).Scan(&domainID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrNotFound
@@ -623,7 +654,8 @@ func (r *Repository) DeleteAddress(ctx context.Context, userID, addressID uuid.U
 		    AND EXISTS (
 		        SELECT 1 FROM domains d
 		          JOIN mail_accounts a ON a.id = d.mail_account_id
-		         WHERE d.id = m.domain_id AND a.user_id = $2)`, addressID, userID)
+		         WHERE d.id = m.domain_id AND a.user_id = $2
+		           AND ($3::uuid IS NULL OR a.id = $3))`, addressID, userID, tokenScope(ctx))
 	if err != nil {
 		return err
 	}

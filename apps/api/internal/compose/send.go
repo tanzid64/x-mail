@@ -55,8 +55,9 @@ func (r *Repository) resolveSender(ctx context.Context, tx pgx.Tx, userID uuid.U
 		  FROM mail_addresses m
 		  JOIN domains d ON d.id = m.domain_id
 		  JOIN mail_accounts a ON a.id = d.mail_account_id
-		 WHERE m.id = $1 AND a.user_id = $2 AND a.id = $3`,
-		*addressID, userID, accountID,
+		 WHERE m.id = $1 AND a.user_id = $2 AND a.id = $3
+		   AND ($4::uuid IS NULL OR a.id = $4)`,
+		*addressID, userID, accountID, tokenScope(ctx),
 	).Scan(&s.addressID, &s.email, &s.displayName, &s.domain, &status, &s.active)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -95,8 +96,10 @@ func (r *Repository) QueueDraft(ctx context.Context, userID, draftID uuid.UUID) 
 		err := tx.QueryRow(ctx, `
 			UPDATE drafts d SET status = 'sending'
 			 WHERE d.id = $2 AND d.status = 'draft'
-			   AND EXISTS (SELECT 1 FROM mail_accounts a WHERE a.id = d.mail_account_id AND a.user_id = $1)
-			RETURNING d.id`, userID, draftID).Scan(&id)
+			   AND EXISTS (SELECT 1 FROM mail_accounts a
+			                WHERE a.id = d.mail_account_id AND a.user_id = $1
+			                  AND ($3::uuid IS NULL OR a.id = $3))
+			RETURNING d.id`, userID, draftID, tokenScope(ctx)).Scan(&id)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				if _, getErr := r.GetDraft(ctx, userID, draftID); getErr == nil {
@@ -135,8 +138,9 @@ func (r *Repository) QueueDraft(ctx context.Context, userID, draftID uuid.UUID) 
 		err := tx.QueryRow(ctx,
 			`SELECT m.message_id, m."references", m.thread_id FROM messages m
 			   JOIN mail_accounts a ON a.id = m.mail_account_id
-			  WHERE m.id = $1 AND a.user_id = $2`,
-			*draft.InReplyToID, userID).Scan(&parentMessageID, &parentReferences, &parentThread)
+			  WHERE m.id = $1 AND a.user_id = $2
+			    AND ($3::uuid IS NULL OR a.id = $3)`,
+			*draft.InReplyToID, userID, tokenScope(ctx)).Scan(&parentMessageID, &parentReferences, &parentThread)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return nil, err
 		}

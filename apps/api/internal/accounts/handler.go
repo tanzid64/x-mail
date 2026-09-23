@@ -526,6 +526,9 @@ func (h *Handler) mapError(err error, field string) error {
 		return httpx.UnprocessableEntity("Please correct the highlighted fields.").
 			WithFields(map[string]string{field: "The provider rejected this API key."})
 
+	case errors.Is(err, ErrTokenRestricted):
+		return httpx.Forbidden("This API token is limited to one mail account.")
+
 	case errors.Is(err, ErrNameTaken):
 		return httpx.Conflict("You already have a mail account with that name.")
 

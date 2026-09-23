@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/dark/x-mail/api/internal/auth"
 	"github.com/dark/x-mail/api/internal/crypto"
 	"github.com/dark/x-mail/api/internal/providers"
 	"github.com/dark/x-mail/api/internal/providers/resend"
@@ -20,6 +21,10 @@ var ErrInvalidCredentials = errors.New("accounts: the provider rejected those cr
 // ErrAddressNotOnDomain means the address does not belong to the domain it was
 // filed under, which would produce mail the provider refuses to send.
 var ErrAddressNotOnDomain = errors.New("accounts: address does not belong to that domain")
+
+// ErrTokenRestricted means an API token confined to one mail account tried to
+// do something outside it.
+var ErrTokenRestricted = errors.New("accounts: this API token is limited to one mail account")
 
 // ProviderFactory builds a transport client from a provider name and a
 // decrypted credential. It is a field on Service so tests can substitute a fake
@@ -73,6 +78,12 @@ type ConnectParams struct {
 // so a typo in an API key is reported while the user is looking at the form
 // rather than when their first message silently fails days later.
 func (s *Service) Connect(ctx context.Context, userID uuid.UUID, params ConnectParams) (*MailAccount, error) {
+	// A token confined to one mailbox must not be able to add another. The
+	// restriction is the scope its owner agreed to hand over, and an account
+	// created outside it would silently widen that for every later request.
+	if _, restricted := auth.RestrictedAccount(ctx); restricted {
+		return nil, ErrTokenRestricted
+	}
 	if !params.Provider.Valid() {
 		return nil, fmt.Errorf("accounts: unsupported provider %q", params.Provider)
 	}

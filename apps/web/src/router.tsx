@@ -16,6 +16,7 @@ import { RegisterPage } from '@/routes/register'
 import { ResetPasswordPage } from '@/routes/reset-password'
 import { SettingsAccountDetailPage } from '@/routes/settings/account-detail'
 import { SettingsAccountsPage } from '@/routes/settings/accounts'
+import { SettingsApiTokensPage } from '@/routes/settings/api-tokens'
 import { SettingsLayout } from '@/routes/settings/settings-layout'
 import { ThreadPage } from '@/routes/thread'
 import { VerifyEmailPage } from '@/routes/verify-email'
@@ -134,6 +135,12 @@ const settingsAccountDetailRoute = createRoute({
   component: SettingsAccountDetailPage,
 })
 
+const settingsApiTokensRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: '/api-tokens',
+  component: SettingsApiTokensPage,
+})
+
 const settingsIndexRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: '/',
@@ -160,7 +167,12 @@ const routeTree = rootRoute.addChildren([
   appLayoutRoute.addChildren([
     threadRoute,
     folderRoute,
-    settingsRoute.addChildren([settingsIndexRoute, settingsAccountsRoute, settingsAccountDetailRoute]),
+    settingsRoute.addChildren([
+      settingsIndexRoute,
+      settingsAccountsRoute,
+      settingsAccountDetailRoute,
+      settingsApiTokensRoute,
+    ]),
   ]),
 ])
 

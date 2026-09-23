@@ -1,11 +1,12 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
-import { AtSign, Bell, Shield, SlidersHorizontal, Tag } from 'lucide-react'
+import { AtSign, Bell, KeyRound, Shield, SlidersHorizontal, Tag } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
 /** Settings sections. Those not yet built are shown but not linkable. */
 const SECTIONS = [
   { to: '/settings/accounts', label: 'Mail accounts', icon: AtSign, ready: true },
+  { to: '/settings/api-tokens', label: 'API tokens', icon: KeyRound, ready: true },
   { to: '/settings/general', label: 'General', icon: SlidersHorizontal, ready: false },
   { to: '/settings/labels', label: 'Labels', icon: Tag, ready: false },
   { to: '/settings/notifications', label: 'Notifications', icon: Bell, ready: false },

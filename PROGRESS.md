@@ -3,7 +3,7 @@
 Live tracker for the plan in [`docs/PLAN.md`](docs/PLAN.md).
 Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 
-**Current phase:** Phase 7 — Gmail Features (Phases 1–6 complete; MVP scope done)
+**Current phase:** Phase 7 — Gmail Features (Phases 1–6 complete; MVP scope done; API access shipped)
 
 ---
 
@@ -109,6 +109,16 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [ ] Keyboard shortcuts
 - [ ] Filters / rules engine
 
+## Phase 7.5 — API access (third-party)
+
+- [x] `api_tokens` table + 15d / 30d / 1y / never expiry
+- [x] Token generation (`xm_…`), SHA-256 at rest, hint-only in responses
+- [x] `RequireAuth` accepts a session cookie **or** `Authorization: Bearer`
+- [x] Token management API + Settings → API tokens screen
+- [x] Per-account restriction (optional, defaults to every account)
+- [x] Token cannot mint tokens or change the password
+- [x] `last_used_at` tracking + immediate revocation
+
 ## Phase 8 — Advanced Accounts
 
 - [ ] Unified inbox (all accounts)
@@ -204,3 +214,12 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 46 | Every action that changes something says so, including when nothing changed | "Test key" and "Sync from provider" spun and then said nothing, which reads exactly like a dead button. A recheck that leaves a domain pending has to report that too |
 | 47 | A key test reports from the returned account, not the HTTP status | `CheckCredentials` records a rejected key as account status and still answers 200, so the verdict is in the body |
 | 48 | `SyncDomains` takes the complete remote list; one domain goes through `UpsertDomain` | Sync reconciles by deleting whatever it was not given. `RefreshDomain` passed it a single domain, so "Recheck DNS" deleted every other domain on the account and its addresses. Covered by `TestRefreshingOneDomainLeavesTheOthersAlone` |
+| 49 | API tokens live in `internal/auth`, not their own package | They authenticate a request and resolve to `*auth.User`, which `RequireAuth` needs; a separate package would have meant an import cycle for no gain |
+| 50 | One `RequireAuth` accepts either a cookie or a Bearer token | "Every API works through login or key" is then a property of the middleware rather than a checklist applied route by route |
+| 51 | A presented Bearer token is never silently retried as a cookie | It is the caller's stated credential, so an expired key is told it expired rather than being answered "you must be signed in" |
+| 52 | Exactly four lifetimes, validated server-side | An arbitrary duration invites tokens that outlive the integration they were made for without anyone choosing that. Calendar arithmetic, so "30 days" is the same date next month across a DST change |
+| 53 | Tokens are SHA-256 at rest, like sessions; the secret is returned once | Full-entropy random values have nothing to brute force, and a lost token is replaced rather than recovered |
+| 54 | Revocation is a soft `revoked_at`, not a delete | The digest can never be reissued, the row is what an audit log will want, and it lets a revoked key be told it was revoked rather than that it never existed |
+| 55 | A token cannot mint a token or change the password | A 15-day key issuing itself a permanent one would make every expiry a suggestion; a key that could change the password could lock the owner out of revoking it |
+| 56 | The per-account restriction is applied in SQL, read from the request context | Same reasoning as ownership (#16): threading it through every signature means a query can filter by user and forget the account, which is a silent leak between mailboxes |
+| 57 | A restricted token gets 404 for another account, not 403 | Consistent with #15 — a refusal would confirm the account exists |

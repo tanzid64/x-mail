@@ -225,6 +225,10 @@ func (s *Server) setupRoutes() {
 			// request, and then only ever carries that user's events.
 			r.Get("/ws", s.hub.Handler)
 
+			// Token management is behind RequireSession inside RoutesAPITokens:
+			// reachable with a session, never with a token.
+			r.Route("/api-tokens", s.auth.RoutesAPITokens)
+
 			r.Route("/mail-accounts", s.accounts.RoutesAccounts)
 			r.Route("/domains", s.accounts.RoutesDomains)
 			r.Route("/addresses", s.accounts.RoutesAddresses)

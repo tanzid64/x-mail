@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/dark/x-mail/api/internal/auth"
 )
 
 var (
@@ -52,11 +54,21 @@ func scanDraft(row pgx.Row) (*Draft, error) {
 	return &d, nil
 }
 
-// ownedDraft narrows to drafts under accounts the user owns, so every draft
-// query carries its authorization in the SQL.
-const draftOwnership = `
+// draftOwnership resolves a draft to its owner and, for a token confined to one
+// mail account, to that account as well.
+//
+// scope is the placeholder number holding the restriction; it differs per query
+// because the other arguments do. Every query that reads or writes a draft goes
+// through here, so neither half of the predicate can be applied without the
+// other.
+func draftOwnership(scope int) string {
+	return fmt.Sprintf(`
 	JOIN mail_accounts a ON a.id = d.mail_account_id
-	WHERE a.user_id = $1`
+	WHERE a.user_id = $1 AND ($%d::uuid IS NULL OR a.id = $%d)`, scope, scope)
+}
+
+// tokenScope is the mail account a restricted API token may touch, or nil.
+func tokenScope(ctx context.Context) any { return auth.AccountScopeArg(ctx) }
 
 type CreateDraftParams struct {
 	UserID        uuid.UUID
@@ -81,10 +93,12 @@ func (r *Repository) CreateDraft(ctx context.Context, params CreateDraftParams) 
 		INSERT INTO drafts (mail_account_id, thread_id, in_reply_to_id, from_address_id,
 		                    "to", cc, bcc, subject, html_body, text_body)
 		SELECT $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
-		 WHERE EXISTS (SELECT 1 FROM mail_accounts WHERE id = $2 AND user_id = $1)
+		 WHERE EXISTS (SELECT 1 FROM mail_accounts
+		                WHERE id = $2 AND user_id = $1
+		                  AND ($12::uuid IS NULL OR id = $12))
 		RETURNING id`,
 		params.UserID, params.MailAccountID, params.ThreadID, params.InReplyToID, params.FromAddressID,
-		to, cc, bcc, params.Subject, params.HTMLBody, params.TextBody).Scan(&id)
+		to, cc, bcc, params.Subject, params.HTMLBody, params.TextBody, tokenScope(ctx)).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// The account is not the caller's, so it reads as missing.
@@ -97,7 +111,8 @@ func (r *Repository) CreateDraft(ctx context.Context, params CreateDraftParams) 
 
 func (r *Repository) GetDraft(ctx context.Context, userID, draftID uuid.UUID) (*Draft, error) {
 	draft, err := scanDraft(r.db.QueryRow(ctx,
-		`SELECT `+draftColumns+` FROM drafts d `+draftOwnership+` AND d.id = $2`, userID, draftID))
+		`SELECT `+draftColumns+` FROM drafts d `+draftOwnership(3)+` AND d.id = $2`,
+		userID, draftID, tokenScope(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -110,11 +125,11 @@ func (r *Repository) GetDraft(ctx context.Context, userID, draftID uuid.UUID) (*
 }
 
 func (r *Repository) ListDrafts(ctx context.Context, userID uuid.UUID, accountID *uuid.UUID) ([]Draft, error) {
-	query := `SELECT ` + draftColumns + ` FROM drafts d ` + draftOwnership
-	args := []any{userID}
+	query := `SELECT ` + draftColumns + ` FROM drafts d ` + draftOwnership(2)
+	args := []any{userID, tokenScope(ctx)}
 	if accountID != nil {
 		args = append(args, *accountID)
-		query += ` AND d.mail_account_id = $2`
+		query += ` AND d.mail_account_id = $3`
 	}
 	query += ` ORDER BY d.updated_at DESC`
 
@@ -179,10 +194,12 @@ func (r *Repository) UpdateDraft(ctx context.Context, userID, draftID uuid.UUID,
 			text_body       = COALESCE($9, d.text_body)
 		 WHERE d.id = $2
 		   AND d.status = 'draft'
-		   AND EXISTS (SELECT 1 FROM mail_accounts a WHERE a.id = d.mail_account_id AND a.user_id = $1)
+		   AND EXISTS (SELECT 1 FROM mail_accounts a
+		                WHERE a.id = d.mail_account_id AND a.user_id = $1
+		                  AND ($10::uuid IS NULL OR a.id = $10))
 		RETURNING d.id`,
 		userID, draftID, params.FromAddressID, to, cc, bcc,
-		params.Subject, params.HTMLBody, params.TextBody).Scan(&id)
+		params.Subject, params.HTMLBody, params.TextBody, tokenScope(ctx)).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Either it is not theirs, or a send already claimed it.
@@ -200,8 +217,10 @@ func (r *Repository) DeleteDraft(ctx context.Context, userID, draftID uuid.UUID)
 	tag, err := r.db.Exec(ctx, `
 		DELETE FROM drafts d
 		 WHERE d.id = $2
-		   AND EXISTS (SELECT 1 FROM mail_accounts a WHERE a.id = d.mail_account_id AND a.user_id = $1)`,
-		userID, draftID)
+		   AND EXISTS (SELECT 1 FROM mail_accounts a
+		                WHERE a.id = d.mail_account_id AND a.user_id = $1
+		                  AND ($3::uuid IS NULL OR a.id = $3))`,
+		userID, draftID, tokenScope(ctx))
 	if err != nil {
 		return err
 	}
@@ -220,8 +239,10 @@ func (r *Repository) ClaimDraftForSending(ctx context.Context, userID, draftID u
 		UPDATE drafts d SET status = 'sending'
 		 WHERE d.id = $2
 		   AND d.status = 'draft'
-		   AND EXISTS (SELECT 1 FROM mail_accounts a WHERE a.id = d.mail_account_id AND a.user_id = $1)
-		RETURNING d.id`, userID, draftID).Scan(&id)
+		   AND EXISTS (SELECT 1 FROM mail_accounts a
+		                WHERE a.id = d.mail_account_id AND a.user_id = $1
+		                  AND ($3::uuid IS NULL OR a.id = $3))
+		RETURNING d.id`, userID, draftID, tokenScope(ctx)).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			if _, getErr := r.GetDraft(ctx, userID, draftID); getErr == nil {
@@ -277,10 +298,11 @@ func (r *Repository) CreateAttachment(ctx context.Context, userID uuid.UUID, par
 		 WHERE EXISTS (
 		     SELECT 1 FROM drafts d
 		       JOIN mail_accounts a ON a.id = d.mail_account_id
-		      WHERE d.id = $2 AND a.user_id = $1)
+		      WHERE d.id = $2 AND a.user_id = $1
+		        AND ($9::uuid IS NULL OR a.id = $9))
 		RETURNING id`,
 		userID, params.DraftID, params.Filename, params.MimeType, params.SizeBytes,
-		params.StorageKey, params.ContentID, params.IsInline).Scan(&id)
+		params.StorageKey, params.ContentID, params.IsInline, tokenScope(ctx)).Scan(&id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -297,7 +319,8 @@ func (r *Repository) ListDraftAttachments(ctx context.Context, userID, draftID u
 		  JOIN drafts d ON d.id = at.draft_id
 		  JOIN mail_accounts a ON a.id = d.mail_account_id
 		 WHERE at.draft_id = $2 AND a.user_id = $1
-		 ORDER BY at.created_at`, userID, draftID)
+		   AND ($3::uuid IS NULL OR a.id = $3)
+		 ORDER BY at.created_at`, userID, draftID, tokenScope(ctx))
 }
 
 func (r *Repository) ListMessageAttachments(ctx context.Context, userID, messageID uuid.UUID) ([]Attachment, error) {
@@ -306,7 +329,8 @@ func (r *Repository) ListMessageAttachments(ctx context.Context, userID, message
 		  JOIN messages m ON m.id = at.message_id
 		  JOIN mail_accounts a ON a.id = m.mail_account_id
 		 WHERE at.message_id = $2 AND a.user_id = $1
-		 ORDER BY at.created_at`, userID, messageID)
+		   AND ($3::uuid IS NULL OR a.id = $3)
+		 ORDER BY at.created_at`, userID, messageID, tokenScope(ctx))
 }
 
 func (r *Repository) queryAttachments(ctx context.Context, query string, args ...any) ([]Attachment, error) {
@@ -335,11 +359,13 @@ func (r *Repository) GetAttachment(ctx context.Context, userID, attachmentID uui
 		 WHERE at.id = $2
 		   AND (
 		     EXISTS (SELECT 1 FROM drafts d JOIN mail_accounts a ON a.id = d.mail_account_id
-		              WHERE d.id = at.draft_id AND a.user_id = $1)
+		              WHERE d.id = at.draft_id AND a.user_id = $1
+		                AND ($3::uuid IS NULL OR a.id = $3))
 		     OR
 		     EXISTS (SELECT 1 FROM messages m JOIN mail_accounts a ON a.id = m.mail_account_id
-		              WHERE m.id = at.message_id AND a.user_id = $1)
-		   )`, userID, attachmentID))
+		              WHERE m.id = at.message_id AND a.user_id = $1
+		                AND ($3::uuid IS NULL OR a.id = $3))
+		   )`, userID, attachmentID, tokenScope(ctx)))
 }
 
 func (r *Repository) DeleteAttachment(ctx context.Context, userID, attachmentID uuid.UUID) (*Attachment, error) {
