@@ -70,6 +70,13 @@ expensive to undo, so treat them as fixed unless the user says otherwise.
 mail account carries its own provider credentials and its own mailbox. Never add a `user_id`
 column to mailbox tables — ownership is always resolved through `mail_account_id`.
 
+**The OpenAPI document is hand-written and must be updated with the route.**
+`apps/api/internal/apidocs/openapi.yaml` is embedded in the binary and served at `/api/v1/openapi.yaml`,
+with Swagger UI at `/api/v1/docs`. Two tests in `internal/server/openapi_test.go` walk the real
+router and compare it against the spec in both directions, so adding a route without documenting
+it fails the build. Write the *why* as well as the shape — the prose is the part a generator
+could never produce, and the reason this is not generated from annotations.
+
 **Every request is authenticated by a session cookie *or* an API token.** `RequireAuth` accepts
 both, so a route added behind it works for the browser and for a third party without further
 thought. A presented `Authorization: Bearer` is never silently retried as a cookie — an expired

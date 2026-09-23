@@ -118,6 +118,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] Per-account restriction (optional, defaults to every account)
 - [x] Token cannot mint tokens or change the password
 - [x] `last_used_at` tracking + immediate revocation
+- [x] OpenAPI 3.1 document + Swagger UI at `/api/v1/docs`
+- [x] Tests that fail when the spec and the router drift apart
 
 ## Phase 8 — Advanced Accounts
 
@@ -223,3 +225,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 55 | A token cannot mint a token or change the password | A 15-day key issuing itself a permanent one would make every expiry a suggestion; a key that could change the password could lock the owner out of revoking it |
 | 56 | The per-account restriction is applied in SQL, read from the request context | Same reasoning as ownership (#16): threading it through every signature means a query can filter by user and forget the account, which is a silent leak between mailboxes |
 | 57 | A restricted token gets 404 for another account, not 403 | Consistent with #15 — a refusal would confirm the account exists |
+| 58 | The OpenAPI document is hand-written, not generated from annotations | Generators want annotations on every handler and still describe shapes badly; the value here is the prose about *why* an endpoint behaves as it does, which no generator writes |
+| 59 | Two tests compare the spec against a `chi.Walk` of the real router, both ways | This is the only thing that keeps a hand-written spec honest. Verified to fail on a removed path and on a documented route that does not exist |
+| 60 | The spec is embedded in the binary and served at `/api/v1/openapi.yaml` | A deployed build then serves the description of *itself* rather than of whatever was last generated and committed |
+| 61 | Swagger UI loads from a CDN rather than vendoring ~3 MB of assets | The only part of the service needing the public internet; a locked-down deployment can still consume the raw spec |
+| 62 | Docs are public, outside the auth middleware | An API meant for third parties that hides its own description is not much use to them, and the document contains no secrets |

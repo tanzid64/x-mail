@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/dark/x-mail/api/internal/accounts"
+	"github.com/dark/x-mail/api/internal/apidocs"
 	"github.com/dark/x-mail/api/internal/auth"
 	"github.com/dark/x-mail/api/internal/compose"
 	"github.com/dark/x-mail/api/internal/config"
@@ -204,6 +205,10 @@ func (s *Server) setupRoutes() {
 		r.Get("/ping", func(w http.ResponseWriter, _ *http.Request) {
 			httpx.JSON(w, http.StatusOK, map[string]string{"message": "pong"})
 		})
+
+		// Public on purpose: an API meant for third parties that hides its own
+		// description is not much use to them, and it contains no secrets.
+		apidocs.Routes(r)
 
 		r.Route("/auth", s.auth.RoutesPublic)
 

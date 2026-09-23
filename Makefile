@@ -66,6 +66,13 @@ docker-logs:
 docker-ps:
 	docker compose ps
 
+## docs: open the API reference (needs the API running on :8090, or :8180 in containers)
+docs:
+	@url=http://localhost:8090/api/v1/docs; \
+	curl -fsS -o /dev/null "$$url" 2>/dev/null || url=http://localhost:8180/api/v1/docs; \
+	echo "API reference: $$url"; \
+	(xdg-open "$$url" >/dev/null 2>&1 &) || true
+
 ## api: run the HTTP API on the host
 api:
 	cd $(API_DIR) && go run ./cmd/server
@@ -129,7 +136,7 @@ build:
 .PHONY: help infra infra-down infra-reset dev api worker web \
         docker-build docker-up docker-down docker-logs docker-ps \
         migrate-up migrate-down migrate-status migrate-new psql \
-        test test-api test-api-v test-web e2e lint build
+        test test-api test-api-v test-web e2e lint build docs
 
 ## test-api-v: verbose backend tests
 test-api-v:

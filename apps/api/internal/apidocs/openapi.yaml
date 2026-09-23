@@ -1,0 +1,1846 @@
+openapi: 3.1.0
+
+info:
+  title: x-mail API
+  version: "1.0.0"
+  summary: Multi-account mail as an API.
+  description: |
+    x-mail stores and serves mail; a provider such as Resend carries it. The
+    application owns users, mail accounts, addresses, threads, messages, drafts
+    and labels, so this API — not the provider's — is the source of truth for
+    mailbox state.
+
+    ## The object model
+
+    A user is **not** an email account:
+
+    ```
+    User  →  MailAccount  →  Domain  →  MailAddress
+    ```
+
+    A `MailAccount` holds one provider's credentials and owns its own mailbox.
+    Everything in a mailbox — threads, messages, drafts, labels — belongs to a
+    mail account, never directly to a user. Requests that omit
+    `mail_account_id` read across every account you own (the unified inbox).
+
+    ## Authenticating
+
+    Every endpoint below accepts **either** credential:
+
+    - **Session cookie**, set by `POST /auth/login`. This is what the web app
+      uses.
+    - **API token**, as `Authorization: Bearer xm_…`. This is what a script or
+      a third-party integration uses. Create one under Settings → API tokens,
+      or with `POST /api-tokens` from a signed-in session.
+
+    A token may be limited to a single mail account. Anything outside that
+    account answers `404`, exactly as another user's data does.
+
+    Two operations refuse API tokens and require a signed-in browser: managing
+    tokens (`/api-tokens`) and changing your password (`/me/password`). A token
+    that could mint another token would make every expiry meaningless, and one
+    that could change the password could lock you out of revoking it.
+
+    ## Errors
+
+    Every failure uses one envelope:
+
+    ```json
+    { "error": { "code": "validation_failed",
+                 "message": "Please correct the highlighted fields.",
+                 "fields": { "email": "Enter a valid email address." } } }
+    ```
+
+    `fields` is present only for validation failures, and its keys are the
+    request body's own field names.
+
+    Anything you do not own answers `404`, never `403` — a refusal would
+    confirm the record exists.
+  license:
+    name: Proprietary
+
+servers:
+  - url: /api/v1
+    description: Same origin as the app.
+
+security:
+  - sessionCookie: []
+  - apiToken: []
+
+tags:
+  - name: Documentation
+    description: This description, and a page to read it in.
+  - name: Health
+    description: Liveness and readiness, for orchestrators. Outside `/api/v1`.
+  - name: Authentication
+    description: Registration, sign-in, password reset and email verification.
+  - name: Account
+    description: The signed-in user's own profile and password.
+  - name: API tokens
+    description: |
+      Credentials for calling this API without a browser. Session-only: a token
+      cannot manage tokens.
+  - name: Mail accounts
+    description: Provider connections, each with its own credentials and mailbox.
+  - name: Domains
+    description: Sending domains, synced from the provider.
+  - name: Addresses
+    description: Sender identities on a verified domain.
+  - name: Threads
+    description: Conversations — the mailbox itself.
+  - name: Labels
+    description: System placement labels and user labels.
+  - name: Drafts
+    description: Composing and sending.
+  - name: Attachments
+    description: Files on a draft or a received message.
+  - name: Realtime
+    description: The websocket that tells a client what changed.
+  - name: Webhooks
+    description: Provider callbacks. Authenticated by signature, not by session.
+
+paths:
+  # ─────────────────────────────────────────────────────────── health ──
+  /healthz:
+    servers: [{ url: "/" }]
+    get:
+      tags: [Health]
+      summary: Liveness
+      description: Answers as soon as the process is up. Does not touch the database.
+      security: []
+      responses:
+        "200":
+          description: The process is running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, examples: ["ok"] }
+    head:
+      tags: [Health]
+      summary: Liveness (HEAD)
+      description: Same as `GET`. Container probes commonly use `HEAD`.
+      security: []
+      responses:
+        "200": { description: The process is running. }
+
+  /readyz:
+    servers: [{ url: "/" }]
+    get:
+      tags: [Health]
+      summary: Readiness
+      description: Checks PostgreSQL and Redis. Fails while a dependency is unreachable.
+      security: []
+      responses:
+        "200": { description: Ready to serve traffic. }
+        "503": { description: A dependency is unreachable. }
+    head:
+      tags: [Health]
+      summary: Readiness (HEAD)
+      security: []
+      responses:
+        "200": { description: Ready to serve traffic. }
+        "503": { description: A dependency is unreachable. }
+
+  /ping:
+    get:
+      tags: [Health]
+      summary: Reachability check
+      description: Confirms the API is routable. Requires no credential.
+      security: []
+      responses:
+        "200":
+          description: Pong.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, examples: ["pong"] }
+
+  /openapi.yaml:
+    get:
+      tags: [Documentation]
+      summary: This document
+      description: |
+        The OpenAPI 3.1 description of this API, embedded in the running build —
+        so it describes the server you are talking to, not a snapshot of some
+        other one. Point a client generator at it.
+      security: []
+      responses:
+        "200":
+          description: The OpenAPI document.
+          content:
+            application/yaml:
+              schema: { type: string }
+
+  /docs:
+    get:
+      tags: [Documentation]
+      summary: Swagger UI
+      description: |
+        A browsable rendering of the document above. "Try it out" runs against
+        this same origin, so a signed-in browser can exercise the API with its
+        own session; paste a token into **Authorize** to call it as an
+        integration would.
+      security: []
+      responses:
+        "200":
+          description: The Swagger UI page.
+          content:
+            text/html:
+              schema: { type: string }
+
+  # ─────────────────────────────────────────────────── authentication ──
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Create an account
+      description: |
+        Creates a user and signs them in. Rate limited to 5 an hour per IP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, name]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password, minLength: 12 }
+                name: { type: string, maxLength: 100 }
+      responses:
+        "201":
+          description: Registered and signed in. Sets the session cookie.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserEnvelope" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in
+      description: |
+        Rate limited to 10 a minute per IP. A wrong password and an unknown
+        address give the same answer, so the response cannot be used to find
+        out who has an account.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Signed in. Sets the session cookie.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Sign out
+      description: Ends this session and clears the cookie. Other sessions are untouched.
+      security: []
+      responses:
+        "204": { description: Signed out. }
+
+  /auth/forgot-password:
+    post:
+      tags: [Authentication]
+      summary: Request a password reset
+      description: |
+        Always answers the same way, whether or not the address is registered.
+        Rate limited to 5 an hour per IP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/reset-password:
+    post:
+      tags: [Authentication]
+      summary: Set a new password from a reset link
+      description: |
+        Revokes every session on success. A reset may be driven by an attacker
+        who already holds one, so none may survive it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token: { type: string }
+                password: { type: string, format: password, minLength: 12 }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /auth/verify-email:
+    post:
+      tags: [Authentication]
+      summary: Confirm an email address
+      description: Consumes the token, so a link cannot be replayed.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          description: Verified.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  # ─────────────────────────────────────────────────────────── account ──
+  /me:
+    get:
+      tags: [Account]
+      summary: The signed-in user
+      description: The endpoint a client calls on load to find out who it is.
+      responses:
+        "200":
+          description: The current user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    patch:
+      tags: [Account]
+      summary: Update your profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Omit a field to leave it unchanged.
+              properties:
+                name: { type: string, maxLength: 100 }
+                avatar_url: { type: [string, "null"], format: uri }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /me/password:
+    post:
+      tags: [Account]
+      summary: Change your password
+      description: |
+        **Session only** — an API token is refused. A token that could change
+        the password could lock you out of the page where it is revoked.
+
+        Signs out every other session but keeps this one: a voluntary change
+        should not log you out of the tab you are in.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string, format: password }
+                new_password: { type: string, format: password, minLength: 12, maxLength: 256 }
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/TokenRefused" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /me/resend-verification:
+    post:
+      tags: [Account]
+      summary: Send the confirmation email again
+      responses:
+        "200": { $ref: "#/components/responses/Message" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ──────────────────────────────────────────────────────── api tokens ──
+  /api-tokens:
+    get:
+      tags: [API tokens]
+      summary: List your API tokens
+      description: |
+        **Session only.** Secrets are never returned — each token shows a
+        masked `hint`. Revoked tokens are not listed.
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Your live tokens, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_tokens:
+                    type: array
+                    items: { $ref: "#/components/schemas/ApiToken" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/TokenRefused" }
+    post:
+      tags: [API tokens]
+      summary: Create an API token
+      description: |
+        **Session only** — a token cannot mint a token, or a 15-day key could
+        issue itself a permanent one.
+
+        The secret is returned by this call and never again: only its SHA-256
+        digest is stored. If it is lost, revoke it and create another.
+
+        Rate limited to 20 an hour per IP.
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, expires_in]
+              properties:
+                name:
+                  type: string
+                  maxLength: 100
+                  description: So you can recognise it later and know what to revoke.
+                  examples: ["CI deploy"]
+                expires_in: { $ref: "#/components/schemas/TokenLifetime" }
+                mail_account_id:
+                  type: [string, "null"]
+                  format: uuid
+                  description: |
+                    Limit the token to one mail account. Omit or send `null` to
+                    give it every account you own, including ones added later.
+      responses:
+        "201":
+          description: Created. `token` appears here and nowhere else.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_token: { $ref: "#/components/schemas/ApiToken" }
+                  token:
+                    type: string
+                    description: The secret. Store it now.
+                    examples: ["xm_7Kd9x2QmVbN4pLsR8tYwZ1aC3eF5gH6jK0mN9oP2qR4"]
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/TokenRefused" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+
+  /api-tokens/{tokenID}:
+    parameters:
+      - name: tokenID
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    delete:
+      tags: [API tokens]
+      summary: Revoke an API token
+      description: |
+        **Session only.** Takes effect immediately — anything using the token
+        stops working on its next request. Cannot be undone.
+      security:
+        - sessionCookie: []
+      responses:
+        "204": { description: Revoked. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/TokenRefused" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ────────────────────────────────────────────────────── mail accounts ──
+  /mail-accounts:
+    get:
+      tags: [Mail accounts]
+      summary: List your mail accounts
+      responses:
+        "200":
+          description: Default first, then by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mail_accounts:
+                    type: array
+                    items: { $ref: "#/components/schemas/MailAccount" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      tags: [Mail accounts]
+      summary: Connect a provider account
+      description: |
+        The API key is verified against the provider before anything is stored,
+        so a bad key is reported here rather than at your first send. It is then
+        encrypted with AES-256-GCM; only `api_key_hint` is ever returned.
+
+        The account's domains are synced as part of connecting.
+
+        Refused for a token limited to one mail account: creating an account
+        outside its restriction would silently widen it.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, provider, api_key]
+              properties:
+                name: { type: string, maxLength: 100, examples: ["Support"] }
+                provider: { $ref: "#/components/schemas/Provider" }
+                api_key: { type: string, examples: ["re_123456789"] }
+                color: { $ref: "#/components/schemas/AccountColor" }
+      responses:
+        "201":
+          description: Connected. The first account becomes the default.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailAccountEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: This API token is limited to one mail account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422":
+          description: |
+            Validation failed, or the provider rejected the key — in which case
+            `fields.api_key` says so.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /mail-accounts/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Mail accounts]
+      summary: Get a mail account
+      responses:
+        "200":
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailAccountEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Mail accounts]
+      summary: Rename, recolour or deactivate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Omit a field to leave it unchanged.
+              properties:
+                name: { type: string, maxLength: 100 }
+                color: { $ref: "#/components/schemas/AccountColor" }
+                is_active: { type: boolean }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailAccountEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+    delete:
+      tags: [Mail accounts]
+      summary: Remove a mail account
+      description: |
+        Deletes its domains, addresses and stored mail. If it was the default,
+        the oldest remaining account takes over. Cannot be undone.
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /mail-accounts/{id}/default:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Mail accounts]
+      summary: Make this the default account
+      responses:
+        "200":
+          description: All of your accounts, with the flag moved.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mail_accounts:
+                    type: array
+                    items: { $ref: "#/components/schemas/MailAccount" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /mail-accounts/{id}/api-key:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Mail accounts]
+      summary: Replace the provider API key
+      description: Verified before it is stored, and clears any recorded credential failure.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [api_key]
+              properties:
+                api_key: { type: string }
+      responses:
+        "200":
+          description: Replaced.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailAccountEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /mail-accounts/{id}/check:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Mail accounts]
+      summary: Re-test the stored credentials
+      description: |
+        Answers `200` whether or not the key still works: the verdict is
+        recorded on the account and returned in `status` and `status_message`,
+        so a rejected key surfaces in settings rather than as a failed send.
+      responses:
+        "200":
+          description: |
+            Checked. `status` is `active` when the key works,
+            `invalid_credentials` when the provider rejected it. An `active`
+            account carrying a `status_message` means the provider could not be
+            reached at all.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailAccountEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /mail-accounts/{id}/sync-domains:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Mail accounts]
+      summary: Sync domains from the provider
+      description: |
+        Reconciles: domains removed at the provider are removed here. To
+        re-check one domain without touching the others, use
+        `POST /domains/{id}/refresh`.
+      responses:
+        "200":
+          description: The account's domains after syncing.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DomainListEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /mail-accounts/{id}/webhook-secret:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Mail accounts]
+      summary: Store the webhook signing secret
+      description: |
+        Encrypted like the API key. Inbound mail for this account is rejected
+        unless it carries a valid signature.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [secret]
+              properties:
+                secret: { type: string, examples: ["whsec_..."] }
+      responses:
+        "200":
+          description: Stored.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MailAccountEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  # ─────────────────────────────────────────────────────────── domains ──
+  /domains:
+    get:
+      tags: [Domains]
+      summary: List domains
+      parameters:
+        - name: mail_account_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: Narrow to one account. Omit for every account you own.
+      responses:
+        "200":
+          description: Domains.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DomainListEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /domains/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Domains]
+      summary: Get a domain
+      responses:
+        "200":
+          description: The domain, with the DNS records it still needs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DomainEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /domains/{id}/refresh:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Domains]
+      summary: Re-check one domain's DNS
+      description: |
+        Re-reads this domain from the provider. Unlike `sync-domains`, it
+        touches only this row.
+      responses:
+        "200":
+          description: The domain as the provider now reports it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DomainEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /domains/{id}/addresses:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Addresses]
+      summary: Add a sender address to a domain
+      description: |
+        The address must be on this domain, or the provider would refuse to
+        send from it. Addresses are globally unique: inbound routing resolves a
+        recipient by address alone, so two accounts claiming one would be
+        ambiguous.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, examples: ["support@company.com"] }
+                display_name: { type: string, maxLength: 100, examples: ["Support"] }
+      responses:
+        "201":
+          description: Added. The first address on a domain becomes its default.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AddressEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  # ───────────────────────────────────────────────────────── addresses ──
+  /addresses:
+    get:
+      tags: [Addresses]
+      summary: List sender addresses
+      parameters:
+        - name: mail_account_id
+          in: query
+          required: false
+          schema: { type: string, format: uuid }
+          description: Narrow to one account. Omit for every account you own.
+      responses:
+        "200":
+          description: Addresses, with their domain and account denormalised on.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  addresses:
+                    type: array
+                    items: { $ref: "#/components/schemas/MailAddress" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /addresses/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Addresses]
+      summary: Get an address
+      responses:
+        "200":
+          description: The address.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AddressEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Addresses]
+      summary: Update an address
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Omit a field to leave it unchanged.
+              properties:
+                display_name: { type: string, maxLength: 100 }
+                is_active: { type: boolean }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AddressEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [Addresses]
+      summary: Remove an address
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /addresses/{id}/default:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Addresses]
+      summary: Make this the default sender for its domain
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AddressEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─────────────────────────────────────────────────────────── threads ──
+  /threads:
+    get:
+      tags: [Threads]
+      summary: List conversations
+      description: |
+        Paginated by cursor, not offset: a mailbox changes under the reader, and
+        an offset silently skips or repeats rows as mail arrives. Pass
+        `next_cursor` back as `cursor` for the following page; it is empty on
+        the last one.
+      parameters:
+        - name: folder
+          in: query
+          schema: { $ref: "#/components/schemas/Folder" }
+          description: Defaults to `inbox`.
+        - name: mail_account_id
+          in: query
+          schema: { type: string, format: uuid }
+          description: Omit for the unified view across every account you own.
+        - name: label_id
+          in: query
+          schema: { type: string, format: uuid }
+          description: Narrow to one label.
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, default: 50 }
+        - name: cursor
+          in: query
+          schema: { type: string }
+          description: The `next_cursor` of the previous page.
+        - name: unread
+          in: query
+          schema: { type: string, enum: ["true"] }
+          description: Send `true` to return only conversations with unread mail.
+      responses:
+        "200":
+          description: One page of conversations.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadPage" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /threads/counts:
+    get:
+      tags: [Threads]
+      summary: Unread counts per folder
+      description: What the sidebar badges show.
+      parameters:
+        - name: mail_account_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Unread count keyed by folder.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  counts:
+                    type: object
+                    additionalProperties: { type: integer }
+                    examples: [{ inbox: 12, starred: 3, spam: 0 }]
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /threads/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Threads]
+      summary: Get a conversation and its messages
+      description: |
+        Marks the conversation read, which is what opening a thread means in a
+        mail client. Pass `mark_read=false` to look without doing so.
+
+        Message bodies come in two forms. `html_sanitized` is the render-safe
+        copy, produced once on arrival; `html_body` is the untouched original
+        and **must never be injected into a page**.
+      parameters:
+        - name: mark_read
+          in: query
+          schema: { type: string, enum: ["false"] }
+          description: Send `false` to leave the conversation unread.
+      responses:
+        "200":
+          description: The conversation.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ThreadDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /threads/actions:
+    post:
+      tags: [Threads]
+      summary: Apply one action to many conversations
+      description: |
+        What the toolbar does for a multi-row selection. Up to 500 ids.
+
+        Conversations you do not own are skipped rather than reported, so
+        `affected` cannot be used to probe for other people's mail.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, thread_ids]
+              properties:
+                action: { $ref: "#/components/schemas/ThreadAction" }
+                thread_ids:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items: { type: string, format: uuid }
+                label_id:
+                  type: [string, "null"]
+                  format: uuid
+                  description: Required for `label` and `unlabel`, ignored otherwise.
+      responses:
+        "200":
+          description: How many conversations changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  affected: { type: integer }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  # ──────────────────────────────────────────────────────────── labels ──
+  /labels:
+    get:
+      tags: [Labels]
+      summary: List labels
+      parameters:
+        - name: mail_account_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: System and user labels.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  labels:
+                    type: array
+                    items: { $ref: "#/components/schemas/Label" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Labels]
+      summary: Create a label
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mail_account_id, name]
+              properties:
+                mail_account_id: { type: string, format: uuid }
+                name: { type: string, maxLength: 100 }
+                color: { type: string, examples: ["blue"] }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabelEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /labels/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      tags: [Labels]
+      summary: Rename or recolour a label
+      description: System labels cannot be renamed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Omit a field to leave it unchanged.
+              properties:
+                name: { type: string, maxLength: 100 }
+                color: { type: string }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LabelEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [Labels]
+      summary: Delete a label
+      description: System labels cannot be deleted.
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  # ──────────────────────────────────────────────────────────── drafts ──
+  /drafts:
+    get:
+      tags: [Drafts]
+      summary: List drafts
+      parameters:
+        - name: mail_account_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Drafts, most recently edited first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  drafts:
+                    type: array
+                    items: { $ref: "#/components/schemas/Draft" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [Drafts]
+      summary: Create a draft
+      description: |
+        Sending is a two-step flow: create or update a draft, then
+        `POST /drafts/{id}/send`. Drafts live in their own table, so a
+        half-written message can never be reached by the sending path.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mail_account_id]
+              properties:
+                mail_account_id: { type: string, format: uuid }
+                from_address_id:
+                  type: [string, "null"]
+                  format: uuid
+                  description: Must be an address on this account. Required before sending.
+                thread_id: { type: [string, "null"], format: uuid }
+                in_reply_to_id:
+                  type: [string, "null"]
+                  format: uuid
+                  description: The message being replied to, for header-based threading.
+                to: { type: array, items: { $ref: "#/components/schemas/AddressInput" } }
+                cc: { type: array, items: { $ref: "#/components/schemas/AddressInput" } }
+                bcc: { type: array, items: { $ref: "#/components/schemas/AddressInput" } }
+                subject: { type: string }
+                html_body: { type: string }
+                text_body: { type: string }
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DraftEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  /drafts/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Drafts]
+      summary: Get a draft
+      responses:
+        "200":
+          description: The draft, with its attachments.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DraftEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [Drafts]
+      summary: Update a draft
+      description: |
+        This is what autosave calls. Refused once a send has claimed the draft:
+        after that, further edits cannot change what goes out.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Omit a field to leave it unchanged.
+              properties:
+                from_address_id: { type: [string, "null"], format: uuid }
+                to: { type: array, items: { $ref: "#/components/schemas/AddressInput" } }
+                cc: { type: array, items: { $ref: "#/components/schemas/AddressInput" } }
+                bcc: { type: array, items: { $ref: "#/components/schemas/AddressInput" } }
+                subject: { type: string }
+                html_body: { type: string }
+                text_body: { type: string }
+      responses:
+        "200":
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DraftEnvelope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: A send has already claimed this draft.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+    delete:
+      tags: [Drafts]
+      summary: Discard a draft
+      description: Also removes its attachments from storage.
+      responses:
+        "204": { description: Discarded. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /drafts/{id}/send:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Drafts]
+      summary: Send a draft
+      description: |
+        Answers `202`, not `200`: the provider has not been called yet. The
+        draft becomes a message, a job is queued, and a worker calls the
+        provider. Poll the message's `status` — or listen on the websocket — to
+        follow `queued → sending → sent → delivered`.
+
+        Sending is idempotent at three layers, so a retried job never sends
+        twice and a double-click cannot either.
+      responses:
+        "202":
+          description: Accepted and queued.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message_id: { type: string, format: uuid }
+                  thread_id: { type: string, format: uuid }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: This draft is already being sent.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "422":
+          description: |
+            Not sendable — no recipient, no sender address, or a sender whose
+            domain is not verified.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /drafts/{id}/attachments:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      tags: [Attachments]
+      summary: Attach a file to a draft
+      description: |
+        `multipart/form-data`, with the file in a part named `file`. Bytes go to
+        object storage; the row holds only a key.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: Attached.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  attachment: { $ref: "#/components/schemas/Attachment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "413":
+          description: The file is larger than the per-attachment limit.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "422": { $ref: "#/components/responses/ValidationFailed" }
+
+  # ─────────────────────────────────────────────────────── attachments ──
+  /attachments/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      tags: [Attachments]
+      summary: Download an attachment
+      description: |
+        Always served as `application/octet-stream` with `X-Content-Type-Options:
+        nosniff`, whatever the file claims to be. An HTML or SVG attachment
+        rendered inline would execute as a page on this origin.
+      responses:
+        "200":
+          description: The file.
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: '`attachment; filename="…"`'
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Attachments]
+      summary: Remove an attachment from a draft
+      responses:
+        "204": { description: Removed. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ────────────────────────────────────────────────────────── realtime ──
+  /ws:
+    get:
+      tags: [Realtime]
+      summary: Websocket for live mailbox updates
+      description: |
+        Upgrades to a websocket carrying only this user's events.
+
+        Events carry **ids, never content**: the client refetches through its
+        normal authorized endpoints, so a bug in the fan-out cannot leak mail.
+        Treat an event as "this changed, ask again".
+
+        A client that stops reading is dropped rather than waited on.
+      parameters:
+        - name: Upgrade
+          in: header
+          required: true
+          schema: { type: string, enum: [websocket] }
+      responses:
+        "101": { description: Switching protocols. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  # ────────────────────────────────────────────────────────── webhooks ──
+  /webhooks/resend/{mailAccountID}:
+    parameters:
+      - name: mailAccountID
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+        description: |
+          Which account the callback is for. The endpoint is per-account so the
+          server has one signing secret to verify against rather than every
+          secret in the system.
+    post:
+      tags: [Webhooks]
+      summary: Resend callback
+      description: |
+        **Not called by you** — this is where Resend delivers inbound mail and
+        delivery events. It sits outside the session middleware because a
+        provider has no cookie: the Svix signature over
+        `{id}.{timestamp}.{body}` is what authenticates it.
+
+        It verifies, records and returns. Parsing, threading and attachments
+        happen in a job — a webhook endpoint that does real work eventually
+        times out and gets retried, turning one email into several.
+
+        Events are deduplicated on the provider's event id by a unique
+        constraint, so the same callback delivered twice creates exactly one
+        message.
+      security: []
+      parameters:
+        - name: svix-id
+          in: header
+          required: true
+          schema: { type: string }
+        - name: svix-timestamp
+          in: header
+          required: true
+          schema: { type: string }
+        - name: svix-signature
+          in: header
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: The provider's event payload, passed through as received.
+      responses:
+        "200": { description: Recorded, or already seen. }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: The signature did not verify.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "404":
+          description: Unknown webhook endpoint.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: xmail_session
+      description: |
+        Set by `POST /auth/login`. httpOnly, so it is never readable from
+        JavaScript. This is what the web app uses.
+    apiToken:
+      type: http
+      scheme: bearer
+      bearerFormat: xm_…
+      description: |
+        `Authorization: Bearer xm_…`. Create one under Settings → API tokens.
+
+        A token acts as you, and may be limited to a single mail account. It
+        cannot manage tokens or change your password.
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Message:
+      description: A human-readable confirmation.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message: { type: string }
+    BadRequest:
+      description: The request was malformed.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Unauthorized:
+      description: |
+        No valid credential. For a bearer token the message distinguishes
+        invalid, expired and revoked.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    TokenRefused:
+      description: |
+        This endpoint requires a signed-in browser; an API token cannot reach
+        it.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    NotFound:
+      description: |
+        No such record — or it belongs to someone else, or lies outside a
+        restricted token's account. The three are deliberately indistinguishable.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    Conflict:
+      description: That would collide with something that already exists.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    ValidationFailed:
+      description: One or more fields were rejected; see `error.fields`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    RateLimited:
+      description: Too many requests. Back off and retry later.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable machine-readable identifier. Branch on this, not on `message`.
+              enum:
+                - bad_request
+                - unauthorized
+                - forbidden
+                - not_found
+                - conflict
+                - validation_failed
+                - rate_limited
+                - internal_error
+            message:
+              type: string
+              description: Safe to show a user. Never contains internal detail.
+            fields:
+              type: object
+              additionalProperties: { type: string }
+              description: Per-field messages, keyed by the request body's field names.
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        avatar_url: { type: [string, "null"], format: uri }
+        email_verified_at:
+          type: [string, "null"]
+          format: date-time
+          description: Null until the address is confirmed.
+        is_admin: { type: boolean }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    UserEnvelope:
+      type: object
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+
+    TokenLifetime:
+      type: string
+      description: |
+        How long a new token lasts. These four are the whole set; anything else
+        is rejected.
+      enum: ["15d", "30d", "1y", "never"]
+      examples: ["30d"]
+
+    ApiToken:
+      type: object
+      description: The secret is never part of this object — only a masked hint.
+      properties:
+        id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        mail_account_id:
+          type: [string, "null"]
+          format: uuid
+          description: Null means every mail account you own.
+        name: { type: string }
+        hint:
+          type: string
+          description: Masked form, enough to recognise the token and useless as one.
+          examples: ["xm_7Kd9…qR4"]
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: Null means it never expires.
+        last_used_at: { type: [string, "null"], format: date-time }
+        revoked_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        expires_in: { $ref: "#/components/schemas/TokenLifetime" }
+
+    Provider:
+      type: string
+      enum: [resend]
+      description: More providers are expected; the mail domain does not depend on which.
+    AccountColor:
+      type: string
+      enum: [slate, emerald, blue, violet, amber, rose]
+      description: How the account is tinted in the switcher.
+    AccountStatus:
+      type: string
+      enum: [active, invalid_credentials, disabled]
+
+    MailAccount:
+      type: object
+      description: One provider connection, with its own credentials and mailbox.
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        provider: { $ref: "#/components/schemas/Provider" }
+        provider_account_id: { type: [string, "null"] }
+        api_key_hint:
+          type: string
+          description: |
+            Masked form of the stored key. The key itself is encrypted and never
+            leaves the server.
+          examples: ["re_123…wxyz"]
+        webhook_secret_hint: { type: string }
+        status: { $ref: "#/components/schemas/AccountStatus" }
+        status_message:
+          type: string
+          description: Why the account is not healthy; empty when it is.
+        last_checked_at: { type: [string, "null"], format: date-time }
+        color: { $ref: "#/components/schemas/AccountColor" }
+        is_default: { type: boolean }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    MailAccountEnvelope:
+      type: object
+      properties:
+        mail_account: { $ref: "#/components/schemas/MailAccount" }
+
+    DNSRecord:
+      type: object
+      properties:
+        type: { type: string, examples: ["TXT"] }
+        name: { type: string }
+        value: { type: string }
+        ttl: { type: string }
+        priority: { type: integer }
+        status: { type: string }
+    Domain:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        mail_account_id: { type: string, format: uuid }
+        domain: { type: string, examples: ["company.com"] }
+        provider_domain_id: { type: string }
+        status: { type: string, enum: [pending, verified, failed] }
+        region: { type: string }
+        records:
+          type: array
+          items: { $ref: "#/components/schemas/DNSRecord" }
+          description: The DNS records still to publish. Empty once verified.
+        last_synced_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    DomainEnvelope:
+      type: object
+      properties:
+        domain: { $ref: "#/components/schemas/Domain" }
+    DomainListEnvelope:
+      type: object
+      properties:
+        domains:
+          type: array
+          items: { $ref: "#/components/schemas/Domain" }
+
+    MailAddress:
+      type: object
+      description: A sender identity. Globally unique, because inbound routing resolves by address alone.
+      properties:
+        id: { type: string, format: uuid }
+        domain_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        display_name: { type: string }
+        is_default: { type: boolean }
+        is_active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        domain:
+          type: string
+          description: Denormalised so a sender picker can group without extra requests.
+        mail_account_id: { type: string, format: uuid }
+    AddressEnvelope:
+      type: object
+      properties:
+        address: { $ref: "#/components/schemas/MailAddress" }
+
+    Folder:
+      type: string
+      enum: [inbox, starred, snoozed, sent, drafts, archive, spam, trash, important]
+    ThreadAction:
+      type: string
+      description: |
+        `label` and `unlabel` additionally require `label_id`.
+      enum:
+        [read, unread, star, unstar, important, unimportant, archive, inbox,
+         spam, not_spam, trash, restore, delete, label, unlabel]
+
+    Participant:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: string, format: email }
+
+    Label:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        mail_account_id: { type: string, format: uuid }
+        name: { type: string }
+        color: { type: string }
+        system_key:
+          type: [string, "null"]
+          description: |
+            Set for built-in labels, which cannot be renamed or deleted. Null
+            for user labels.
+          enum: [INBOX, SENT, DRAFT, ARCHIVE, SPAM, TRASH, null]
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    LabelEnvelope:
+      type: object
+      properties:
+        label: { $ref: "#/components/schemas/Label" }
+
+    Thread:
+      type: object
+      description: A conversation. Counters are maintained on write, not aggregated on read.
+      properties:
+        id: { type: string, format: uuid }
+        mail_account_id: { type: string, format: uuid }
+        subject: { type: string }
+        snippet: { type: string }
+        message_count: { type: integer }
+        unread_count: { type: integer }
+        has_attachments: { type: boolean }
+        is_starred: { type: boolean }
+        participants:
+          type: array
+          items: { $ref: "#/components/schemas/Participant" }
+        last_message_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        labels:
+          type: array
+          items: { $ref: "#/components/schemas/Label" }
+        account_name:
+          type: string
+          description: Present on unified-inbox rows, so a client need not join accounts itself.
+        account_color: { type: string }
+    ThreadPage:
+      type: object
+      properties:
+        threads:
+          type: array
+          items: { $ref: "#/components/schemas/Thread" }
+        next_cursor:
+          type: string
+          description: Pass back as `cursor`. Empty on the last page.
+
+    Recipient:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        type: { type: string, enum: [to, cc, bcc] }
+
+    Message:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        mail_account_id: { type: string, format: uuid }
+        thread_id: { type: string, format: uuid }
+        message_id:
+          type: [string, "null"]
+          description: The RFC 5322 Message-ID. Threading uses headers first.
+        in_reply_to: { type: [string, "null"] }
+        references: { type: array, items: { type: string } }
+        provider_message_id: { type: [string, "null"] }
+        sender_name: { type: string }
+        sender_email: { type: string, format: email }
+        subject: { type: string }
+        snippet: { type: string }
+        html_body:
+          type: string
+          description: |
+            The body exactly as received, **untrusted**. Never inject it into a
+            page — render `html_sanitized`, and do so in a sandboxed frame.
+        html_sanitized:
+          type: string
+          description: The render-safe copy, produced once on arrival.
+        text_body: { type: string }
+        direction: { type: string, enum: [inbound, outbound] }
+        status:
+          type: string
+          description: |
+            Outbound mail moves `queued → sending → sent → delivered`, or ends
+            at `bounced`/`failed`. Status only ever moves forward: providers
+            reorder events, and a late "sent" must not undo a recorded
+            "delivered". Inbound mail is `received`.
+          enum: [draft, queued, sending, sent, delivered, bounced, failed, received]
+        is_read: { type: boolean }
+        is_starred: { type: boolean }
+        is_important: { type: boolean }
+        has_attachments: { type: boolean }
+        size_bytes: { type: integer }
+        sent_at: { type: [string, "null"], format: date-time }
+        received_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        recipients:
+          type: array
+          items: { $ref: "#/components/schemas/Recipient" }
+        labels:
+          type: array
+          items: { $ref: "#/components/schemas/Label" }
+    ThreadDetail:
+      type: object
+      properties:
+        thread: { $ref: "#/components/schemas/Thread" }
+        messages:
+          type: array
+          items: { $ref: "#/components/schemas/Message" }
+
+    AddressInput:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+        name: { type: string }
+
+    Attachment:
+      type: object
+      description: Bytes live in object storage; this row holds a key, never the file.
+      properties:
+        id: { type: string, format: uuid }
+        message_id: { type: [string, "null"], format: uuid }
+        draft_id: { type: [string, "null"], format: uuid }
+        filename: { type: string }
+        mime_type: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        content_id: { type: [string, "null"] }
+        is_inline: { type: boolean }
+        created_at: { type: string, format: date-time }
+
+    Draft:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        mail_account_id: { type: string, format: uuid }
+        thread_id: { type: [string, "null"], format: uuid }
+        in_reply_to_id: { type: [string, "null"], format: uuid }
+        from_address_id: { type: [string, "null"], format: uuid }
+        to: { type: array, items: { $ref: "#/components/schemas/AddressInput" } }
+        cc: { type: array, items: { $ref: "#/components/schemas/AddressInput" } }
+        bcc: { type: array, items: { $ref: "#/components/schemas/AddressInput" } }
+        subject: { type: string }
+        html_body: { type: string }
+        text_body: { type: string }
+        status:
+          type: string
+          enum: [draft, sending, sent]
+          description: Once past `draft`, further edits are refused.
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        attachments:
+          type: array
+          items: { $ref: "#/components/schemas/Attachment" }
+    DraftEnvelope:
+      type: object
+      properties:
+        draft: { $ref: "#/components/schemas/Draft" }

@@ -1,4 +1,4 @@
-import { CircleAlert, KeyRound, Trash2 } from 'lucide-react'
+import { BookOpen, CircleAlert, KeyRound, Trash2 } from 'lucide-react'
 
 import { CreateTokenDialog } from '@/components/settings/create-token-dialog'
 import {
@@ -42,7 +42,16 @@ export function SettingsApiTokensPage() {
             .
           </p>
         </div>
-        <CreateTokenDialog />
+        <div className="flex items-center gap-2">
+          {/* Served by the API itself, so it always describes this build. */}
+          <Button asChild variant="outline" className="gap-2">
+            <a href="/api/v1/docs" target="_blank" rel="noreferrer">
+              <BookOpen className="size-4" />
+              API reference
+            </a>
+          </Button>
+          <CreateTokenDialog />
+        </div>
       </div>
 
       {isLoading ? (
