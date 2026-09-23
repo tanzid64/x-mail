@@ -81,7 +81,7 @@ export function SiteFooter() {
         <Link to="/docs/$page" params={{ page: 'installation' }} className="hover:text-foreground">
           Installation
         </Link>
-        <Link to="/docs" className="hover:text-foreground">
+        <Link to="/docs/$page" params={{ page: 'api' }} className="hover:text-foreground">
           API reference
         </Link>
         <span className="ml-auto">Multi-account mail you host yourself.</span>

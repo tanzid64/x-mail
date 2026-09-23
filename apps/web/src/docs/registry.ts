@@ -1,5 +1,7 @@
 import type { ComponentType } from 'react'
 
+import { ApiOverviewPage } from '@/docs/pages/api-overview'
+import { ApiTokensPage } from '@/docs/pages/api-tokens'
 import { ComposePage } from '@/docs/pages/compose'
 import { ConfigurationPage } from '@/docs/pages/configuration'
 import { GettingStartedPage } from '@/docs/pages/getting-started'
@@ -91,6 +93,23 @@ export const DOC_SECTIONS: DocSection[] = [
         title: 'Receiving mail',
         description: 'Pointing your provider at x-mail, and what happens when mail arrives.',
         component: ReceivingPage,
+      },
+      {
+        slug: 'api-tokens',
+        title: 'API tokens',
+        description: 'Credentials for reaching x-mail from your own code.',
+        component: ApiTokensPage,
+      },
+    ],
+  },
+  {
+    title: 'API',
+    pages: [
+      {
+        slug: 'api',
+        title: 'Overview',
+        description: 'Base URL, authentication, errors, pagination and conventions.',
+        component: ApiOverviewPage,
       },
     ],
   },

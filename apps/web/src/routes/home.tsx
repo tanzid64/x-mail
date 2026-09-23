@@ -200,7 +200,7 @@ function ApiTeaser() {
               single mailbox, and hand it to whatever needs to send.
             </p>
             <Button asChild variant="outline" className="mt-6 gap-2">
-              <Link to="/docs">
+              <Link to="/docs/$page" params={{ page: 'api' }}>
                 API reference
                 <ArrowRight className="size-4" />
               </Link>
