@@ -145,6 +145,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] Webhook idempotency tests
 - [x] Worker retry/idempotency tests
 - [x] HTML sanitization of inbound mail
+- [x] Action feedback (success/error reporting on every mutation)
 - [ ] Observability (metrics, tracing)
 - [ ] Abuse prevention / sending limits
 - [x] Nginx + Docker images (api + web, `make docker-up`)
@@ -199,3 +200,7 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 42 | Images run as a non-root user and contain no `.env` | Nothing needs privilege, and baking a `.env` would ship the encryption master key inside the image |
 | 43 | Web image builds from the repo root to serve `deploy/nginx.conf` | A copy inside `apps/web` would drift from the config production actually uses |
 | 44 | Health endpoints answer HEAD as well as GET | Container probes commonly use HEAD; chi does not imply it from a GET route, which made the API container report unhealthy while being perfectly fine |
+| 45 | Mutation failures are reported by one `MutationCache.onError`, not per call site | A new mutation is then reported by default; forgetting to opt in is a duplicate message, never a silent failure. Screens that render the error next to the offending field opt out with `meta: SILENT_ERROR` |
+| 46 | Every action that changes something says so, including when nothing changed | "Test key" and "Sync from provider" spun and then said nothing, which reads exactly like a dead button. A recheck that leaves a domain pending has to report that too |
+| 47 | A key test reports from the returned account, not the HTTP status | `CheckCredentials` records a rejected key as account status and still answers 200, so the verdict is in the body |
+| 48 | `SyncDomains` takes the complete remote list; one domain goes through `UpsertDomain` | Sync reconciles by deleting whatever it was not given. `RefreshDomain` passed it a single domain, so "Recheck DNS" deleted every other domain on the account and its addresses. Covered by `TestRefreshingOneDomainLeavesTheOthersAlone` |

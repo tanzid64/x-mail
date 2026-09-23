@@ -372,6 +372,37 @@ func TestSyncRemovesDomainsTheProviderNoLongerHas(t *testing.T) {
 	}
 }
 
+// Rechecking one domain's DNS reconciled the whole account against a
+// single-element list, which silently deleted every other domain it owned —
+// and the addresses hanging off them.
+func TestRefreshingOneDomainLeavesTheOthersAlone(t *testing.T) {
+	svc, pool := newService(t)
+	ctx := context.Background()
+
+	userID := newUser(t, pool, "owner@example.com")
+	account := connect(t, svc, userID, "Work")
+
+	before, err := svc.ListDomains(ctx, userID, &account.ID)
+	if err != nil {
+		t.Fatalf("ListDomains: %v", err)
+	}
+	if len(before) != len(stubDomains) {
+		t.Fatalf("setup: got %d domains, want %d", len(before), len(stubDomains))
+	}
+
+	if _, err := svc.RefreshDomain(ctx, userID, before[0].ID); err != nil {
+		t.Fatalf("RefreshDomain: %v", err)
+	}
+
+	after, err := svc.ListDomains(ctx, userID, &account.ID)
+	if err != nil {
+		t.Fatalf("ListDomains after refresh: %v", err)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("refreshing one domain left %d of %d domains", len(after), len(before))
+	}
+}
+
 func TestAddressesBelongToTheirDomainAndAreGloballyUnique(t *testing.T) {
 	svc, pool := newService(t)
 	ctx := context.Background()

@@ -45,7 +45,7 @@ async function signUpReadyToSend(page: Page) {
   await expect(page.getByRole('dialog')).toBeHidden()
 
   // company.test is the stub provider's verified domain.
-  await page.getByText('Work').first().click()
+  await page.getByRole('link', { name: /^Work/ }).click()
   await page.waitForURL(/\/settings\/accounts\/[0-9a-f-]+$/)
 
   const verified = page.getByRole('region', { name: 'company.test' })
@@ -53,7 +53,7 @@ async function signUpReadyToSend(page: Page) {
   await verified.getByLabel('Address').fill(sender)
   await verified.getByLabel('Display name').fill('Compose Tester')
   await verified.getByRole('button', { name: 'Add' }).click()
-  await expect(page.getByText(sender)).toBeVisible()
+  await expect(verified.getByText(sender)).toBeVisible()
 
   return { email, sender }
 }

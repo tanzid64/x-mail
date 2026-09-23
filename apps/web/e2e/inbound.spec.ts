@@ -45,14 +45,14 @@ async function setUpReceivingAccount(page: Page) {
   await page.getByRole('button', { name: 'Connect' }).click()
   await expect(page.getByRole('dialog')).toBeHidden()
 
-  await page.getByText('Support').first().click()
+  await page.getByRole('link', { name: /^Support/ }).click()
   await page.waitForURL(/\/settings\/accounts\/[0-9a-f-]+$/)
   const accountId = page.url().split('/').pop()!
 
   const verified = page.getByRole('region', { name: 'company.test' })
   await verified.getByLabel('Address').fill(address)
   await verified.getByRole('button', { name: 'Add' }).click()
-  await expect(page.getByText(address)).toBeVisible()
+  await expect(verified.getByText(address)).toBeVisible()
 
   await page.fill('#webhook-secret', WEBHOOK_SECRET)
   await page.getByRole('button', { name: 'Save secret' }).click()

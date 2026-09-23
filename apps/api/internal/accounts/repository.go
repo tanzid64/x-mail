@@ -361,25 +361,15 @@ func (r *Repository) SyncDomains(ctx context.Context, accountID uuid.UUID, remot
 		seen := make([]string, 0, len(remote))
 
 		for _, d := range remote {
-			records, err := json.Marshal(d.Records)
-			if err != nil {
-				return fmt.Errorf("encode dns records: %w", err)
-			}
-			if _, err := tx.Exec(ctx,
-				`INSERT INTO domains (mail_account_id, domain, provider_domain_id, status, region, records, last_synced_at)
-				 VALUES ($1, $2, $3, $4, $5, $6, now())
-				 ON CONFLICT (mail_account_id, provider_domain_id) DO UPDATE
-				    SET domain = EXCLUDED.domain,
-				        status = EXCLUDED.status,
-				        region = EXCLUDED.region,
-				        records = EXCLUDED.records,
-				        last_synced_at = now()`,
-				accountID, d.Name, d.ID, string(d.Status), d.Region, records); err != nil {
+			if err := upsertDomain(ctx, tx, accountID, d); err != nil {
 				return err
 			}
 			seen = append(seen, d.ID)
 		}
 
+		// Reconciliation: a domain removed at the provider must not linger here.
+		// This is why SyncDomains may only ever be given the *complete* remote
+		// list — see UpsertDomain for the single-domain case.
 		_, err := tx.Exec(ctx,
 			`DELETE FROM domains WHERE mail_account_id = $1 AND NOT (provider_domain_id = ANY($2))`,
 			accountID, seen)
@@ -389,6 +379,35 @@ func (r *Repository) SyncDomains(ctx context.Context, accountID uuid.UUID, remot
 		return nil, err
 	}
 	return r.ListDomains(ctx, accountID)
+}
+
+// UpsertDomain writes one domain without touching the rest of the account.
+//
+// Refreshing a single domain must not go through SyncDomains: that reconciles
+// the account against the list it is handed, so passing it one domain would
+// delete every other domain the account owns, and their addresses with them.
+func (r *Repository) UpsertDomain(ctx context.Context, accountID uuid.UUID, remote providers.Domain) error {
+	return r.inTx(ctx, func(tx pgx.Tx) error {
+		return upsertDomain(ctx, tx, accountID, remote)
+	})
+}
+
+func upsertDomain(ctx context.Context, tx pgx.Tx, accountID uuid.UUID, d providers.Domain) error {
+	records, err := json.Marshal(d.Records)
+	if err != nil {
+		return fmt.Errorf("encode dns records: %w", err)
+	}
+	_, err = tx.Exec(ctx,
+		`INSERT INTO domains (mail_account_id, domain, provider_domain_id, status, region, records, last_synced_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, now())
+		 ON CONFLICT (mail_account_id, provider_domain_id) DO UPDATE
+		    SET domain = EXCLUDED.domain,
+		        status = EXCLUDED.status,
+		        region = EXCLUDED.region,
+		        records = EXCLUDED.records,
+		        last_synced_at = now()`,
+		accountID, d.Name, d.ID, string(d.Status), d.Region, records)
+	return err
 }
 
 func (r *Repository) ListDomains(ctx context.Context, accountID uuid.UUID) ([]Domain, error) {

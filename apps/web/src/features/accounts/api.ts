@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query'
 
 import { ApiError, apiFetch } from '@/lib/api'
+import { SILENT_ERROR } from '@/lib/toast'
 import type { Domain, MailAccount, MailAddress } from './types'
 
 export const accountKeys = {
@@ -63,6 +64,7 @@ export function useConnectAccount() {
     mutationFn: async (input) =>
       (await apiFetch<{ mail_account: MailAccount }>('/mail-accounts', { method: 'POST', body: input }))
         .mail_account,
+    meta: SILENT_ERROR,
     onSuccess: invalidate,
   })
 }
@@ -101,6 +103,7 @@ export function useRotateAPIKey(id: string) {
     mutationFn: async (input) =>
       (await apiFetch<{ mail_account: MailAccount }>(`/mail-accounts/${id}/api-key`, { method: 'POST', body: input }))
         .mail_account,
+    meta: SILENT_ERROR,
     onSuccess: invalidate,
   })
 }
@@ -115,6 +118,7 @@ export function useSetWebhookSecret(id: string) {
           body: input,
         })
       ).mail_account,
+    meta: SILENT_ERROR,
     onSuccess: invalidate,
   })
 }
@@ -153,6 +157,7 @@ export function useCreateAddress(domainId: string) {
     mutationFn: async (input) =>
       (await apiFetch<{ address: MailAddress }>(`/domains/${domainId}/addresses`, { method: 'POST', body: input }))
         .address,
+    meta: SILENT_ERROR,
     onSuccess: invalidate,
   })
 }

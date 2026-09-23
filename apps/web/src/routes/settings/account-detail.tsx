@@ -33,6 +33,7 @@ import {
 } from '@/features/accounts/api'
 import { ACCOUNT_COLORS, accountDotClass } from '@/features/accounts/types'
 import { ApiError } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 import { useUIStore } from '@/stores/ui'
 
@@ -53,6 +54,8 @@ export function SettingsAccountDetailPage() {
 
   const activeAccount = useUIStore((state) => state.activeAccount)
   const setActiveAccount = useUIStore((state) => state.setActiveAccount)
+
+  const providerName = account ? account.provider.charAt(0).toUpperCase() + account.provider.slice(1) : ''
 
   const [newKey, setNewKey] = useState('')
   const [keyError, setKeyError] = useState<string | null>(null)
@@ -91,10 +94,42 @@ export function SettingsAccountDetailPage() {
   }
 
   const onDelete = async () => {
-    await remove.mutateAsync(accountId)
+    try {
+      await remove.mutateAsync(accountId)
+    } catch {
+      // The global handler has already reported it; staying put lets the user retry.
+      return
+    }
     // The deleted account must not stay selected in the sidebar.
     if (activeAccount === accountId) setActiveAccount('all')
     await navigate({ to: '/settings/accounts' })
+    toast.success(`“${account.name}” was removed.`)
+  }
+
+  /**
+   * Reports the outcome of a key test.
+   *
+   * A rejected key is not an HTTP error: the API records it as account status
+   * and still answers 200, so the verdict is in the account it hands back.
+   */
+  const reportKeyCheck = (checked: typeof account) => {
+    if (!checked) return
+    if (checked.status === 'invalid_credentials') {
+      toast.error(checked.status_message || 'The provider rejected the stored API key.')
+    } else if (checked.status_message) {
+      // Reached neither a yes nor a no — the provider could not be contacted.
+      toast.warning(checked.status_message)
+    } else {
+      toast.success('The API key works.')
+    }
+  }
+
+  const reportSync = (synced: { length: number }) => {
+    if (synced.length === 0) {
+      toast.info(`No domains on this ${providerName} account yet. Add one there, then sync again.`)
+      return
+    }
+    toast.success(`Synced ${synced.length} domain${synced.length === 1 ? '' : 's'} from ${providerName}.`)
   }
 
   const domainAddresses = (domainId: string) =>
@@ -120,7 +155,11 @@ export function SettingsAccountDetailPage() {
             variant="outline"
             size="sm"
             disabled={setDefault.isPending}
-            onClick={() => setDefault.mutate(accountId)}
+            onClick={() =>
+              setDefault.mutate(accountId, {
+                onSuccess: () => toast.success(`“${account.name}” is now the default account.`),
+              })
+            }
           >
             Make default
           </Button>
@@ -144,7 +183,8 @@ export function SettingsAccountDetailPage() {
               defaultValue={account.name}
               onBlur={(event) => {
                 const name = event.target.value.trim()
-                if (name && name !== account.name) update.mutate({ name })
+                if (!name || name === account.name) return
+                update.mutate({ name }, { onSuccess: () => toast.success('Account name saved.') })
               }}
             />
           </div>
@@ -179,7 +219,7 @@ export function SettingsAccountDetailPage() {
             size="sm"
             className="gap-2"
             disabled={check.isPending}
-            onClick={() => check.mutate()}
+            onClick={() => check.mutate(undefined, { onSuccess: reportKeyCheck })}
           >
             {check.isPending ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -236,7 +276,7 @@ export function SettingsAccountDetailPage() {
             size="sm"
             className="gap-2"
             disabled={sync.isPending}
-            onClick={() => sync.mutate()}
+            onClick={() => sync.mutate(undefined, { onSuccess: reportSync })}
           >
             {sync.isPending ? (
               <Loader2 className="size-3.5 animate-spin" />

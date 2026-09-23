@@ -26,6 +26,7 @@ import {
 import type { ComposeFields } from '@/features/compose/types'
 import { useDebouncedEffect } from '@/hooks/use-debounced-effect'
 import { ApiError } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { useComposeStore } from '@/stores/compose'
 
 /** How long typing must pause before the draft is saved. */
@@ -115,6 +116,7 @@ function ComposeWindowInner({ draftId, onClose }: InnerProps) {
       await save.mutateAsync({ id: draftId, ...fields })
       await send.mutateAsync(draftId)
       onClose()
+      toast.success('Message sent.')
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -125,8 +127,14 @@ function ComposeWindowInner({ draftId, onClose }: InnerProps) {
   }
 
   const onDiscard = async () => {
-    await remove.mutateAsync(draftId)
+    try {
+      await remove.mutateAsync(draftId)
+    } catch {
+      // Already reported by the global handler; keep the window open to retry.
+      return
+    }
     onClose()
+    toast.success('Draft discarded.')
   }
 
   const onPickFiles = (files: FileList | null) => {

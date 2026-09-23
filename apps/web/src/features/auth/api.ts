@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query'
 
 import { ApiError, apiFetch } from '@/lib/api'
+import { SILENT_ERROR } from '@/lib/toast'
 import type { MessageResponse, User, UserResponse } from './types'
 
 export const authKeys = {
@@ -44,6 +45,7 @@ export function useSession(): UseQueryResult<User | null, ApiError> {
 export function useLogin() {
   const queryClient = useQueryClient()
   return useMutation<User, ApiError, { email: string; password: string }>({
+    meta: SILENT_ERROR,
     mutationFn: async (input) => (await apiFetch<UserResponse>('/auth/login', { method: 'POST', body: input })).user,
     onSuccess: (user) => {
       queryClient.setQueryData(authKeys.session, user)
@@ -54,6 +56,7 @@ export function useLogin() {
 export function useRegister() {
   const queryClient = useQueryClient()
   return useMutation<User, ApiError, { email: string; password: string; name: string }>({
+    meta: SILENT_ERROR,
     mutationFn: async (input) =>
       (await apiFetch<UserResponse>('/auth/register', { method: 'POST', body: input })).user,
     onSuccess: (user) => {
@@ -77,12 +80,14 @@ export function useLogout() {
 
 export function useForgotPassword() {
   return useMutation<MessageResponse, ApiError, { email: string }>({
+    meta: SILENT_ERROR,
     mutationFn: (input) => apiFetch<MessageResponse>('/auth/forgot-password', { method: 'POST', body: input }),
   })
 }
 
 export function useResetPassword() {
   return useMutation<MessageResponse, ApiError, { token: string; password: string }>({
+    meta: SILENT_ERROR,
     mutationFn: (input) => apiFetch<MessageResponse>('/auth/reset-password', { method: 'POST', body: input }),
   })
 }
@@ -90,6 +95,7 @@ export function useResetPassword() {
 export function useVerifyEmail() {
   const queryClient = useQueryClient()
   return useMutation<User, ApiError, { token: string }>({
+    meta: SILENT_ERROR,
     mutationFn: async (input) =>
       (await apiFetch<UserResponse>('/auth/verify-email', { method: 'POST', body: input })).user,
     onSuccess: (user) => {

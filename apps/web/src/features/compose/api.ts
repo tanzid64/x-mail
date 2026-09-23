@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tan
 
 import { mailboxKeys } from '@/features/mailbox/api'
 import { ApiError, apiFetch } from '@/lib/api'
+import { SILENT_ERROR } from '@/lib/toast'
 import type { Attachment, ComposeAddress, Draft } from './types'
 
 export const draftKeys = {
@@ -72,6 +73,7 @@ interface UpdateDraftInput {
  */
 export function useSaveDraft() {
   return useMutation<Draft, ApiError, UpdateDraftInput>({
+    meta: SILENT_ERROR,
     mutationFn: async ({ id, ...body }) =>
       (await apiFetch<{ draft: Draft }>(`/drafts/${id}`, { method: 'PATCH', body })).draft,
   })
@@ -90,6 +92,7 @@ export function useDeleteDraft() {
 export function useSendDraft() {
   const queryClient = useQueryClient()
   return useMutation<{ message_id: string; thread_id: string }, ApiError, string>({
+    meta: SILENT_ERROR,
     mutationFn: (id) =>
       apiFetch<{ message_id: string; thread_id: string }>(`/drafts/${id}/send`, { method: 'POST' }),
     onSuccess: () => {
@@ -105,6 +108,7 @@ export function useUploadAttachment() {
   const queryClient = useQueryClient()
 
   return useMutation<Attachment, ApiError, { draftId: string; file: File }>({
+    meta: SILENT_ERROR,
     mutationFn: async ({ draftId, file }) => {
       const form = new FormData()
       form.append('file', file)

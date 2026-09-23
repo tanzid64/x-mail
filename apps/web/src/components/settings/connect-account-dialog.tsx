@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useConnectAccount } from '@/features/accounts/api'
 import { ACCOUNT_COLORS, accountDotClass } from '@/features/accounts/types'
 import { applyApiErrors } from '@/lib/form'
+import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
 const schema = z.object({
@@ -56,9 +57,10 @@ export function ConnectAccountDialog() {
     try {
       // The key is verified against the provider before anything is stored, so
       // a failure here means the key itself is wrong.
-      await connect.mutateAsync({ ...values, provider: 'resend' })
+      const account = await connect.mutateAsync({ ...values, provider: 'resend' })
       reset()
       setOpen(false)
+      toast.success(`“${account.name}” is connected. Sync its domains to start sending.`)
     } catch (error) {
       setFormError(applyApiErrors(error, setError))
     }

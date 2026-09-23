@@ -37,14 +37,14 @@ test('connecting a mail account stores it and syncs its domains', async ({ page 
 
   // The dialog closes only once the provider accepted the key.
   await expect(page.getByRole('dialog')).toBeHidden()
-  await expect(page.getByText('Work')).toBeVisible()
+  await expect(page.getByRole('link', { name: /^Work/ })).toBeVisible()
   await expect(page.getByText('Default').first()).toBeVisible()
 
   // The masked hint is shown; the key itself must never appear.
   await expect(page.getByText('re_e2e…3456')).toBeVisible()
   await expect(page.locator('body')).not.toContainText(VALID_KEY)
 
-  await page.getByText('Work').first().click()
+  await page.getByRole('link', { name: /^Work/ }).click()
   await page.waitForURL(/\/settings\/accounts\/[0-9a-f-]+$/)
 
   // Domains were pulled from the provider when the account was connected.
@@ -99,7 +99,7 @@ test('a sender address can be added to a verified domain', async ({ page }) => {
   await connectAccount(page, 'Support')
   await expect(page.getByRole('dialog')).toBeHidden()
 
-  await page.getByText('Support').first().click()
+  await page.getByRole('link', { name: /^Support/ }).click()
   await page.waitForURL(/\/settings\/accounts\/[0-9a-f-]+$/)
 
   const verified = page.getByRole('region', { name: 'company.test' })
@@ -107,7 +107,7 @@ test('a sender address can be added to a verified domain', async ({ page }) => {
   await verified.getByLabel('Display name').fill('Hello')
   await verified.getByRole('button', { name: 'Add' }).click()
 
-  await expect(page.getByText('hello@company.test')).toBeVisible()
+  await expect(verified.getByText('hello@company.test')).toBeVisible()
 
   // An address on a different domain is refused, with the reason shown.
   await verified.getByLabel('Address').fill('nope@elsewhere.test')
@@ -121,7 +121,7 @@ test('removing an account clears it from the switcher', async ({ page }) => {
   await connectAccount(page, 'Temporary')
   await expect(page.getByRole('dialog')).toBeHidden()
 
-  await page.getByText('Temporary').first().click()
+  await page.getByRole('link', { name: /^Temporary/ }).click()
   await page.waitForURL(/\/settings\/accounts\/[0-9a-f-]+$/)
 
   await page.getByRole('button', { name: 'Remove account' }).click()
@@ -130,4 +130,36 @@ test('removing an account clears it from the switcher', async ({ page }) => {
   await page.waitForURL('**/settings/accounts')
   await expect(page.getByText('No mail accounts yet')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Switch mail account' })).toContainText('No accounts yet')
+})
+
+test('testing a key, syncing and rechecking all report what happened', async ({ page }) => {
+  await signUp(page)
+  await page.goto('/settings/accounts')
+
+  await connectAccount(page, 'Feedback')
+  await expect(page.getByRole('dialog')).toBeHidden()
+  await expect(page.getByText('“Feedback” is connected.', { exact: false })).toBeVisible()
+
+  await page.getByRole('link', { name: /^Feedback/ }).click()
+  await page.waitForURL(/\/settings\/accounts\/[0-9a-f-]+$/)
+
+  // Each of these used to spin briefly and then say nothing at all, which is
+  // indistinguishable from a button that does not work.
+  await page.getByRole('button', { name: 'Test key' }).click()
+  await expect(page.getByText('The API key works.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Sync from provider' }).click()
+  await expect(page.getByText('Synced 2 domains from Resend.')).toBeVisible()
+
+  await page
+    .getByRole('region', { name: 'pending.test' })
+    .getByRole('button', { name: 'Recheck DNS' })
+    .click()
+  await expect(page.getByText('pending.test is still pending.', { exact: false })).toBeVisible()
+
+  await page
+    .getByRole('region', { name: 'company.test' })
+    .getByRole('button', { name: 'Recheck DNS' })
+    .click()
+  await expect(page.getByText('company.test is verified.')).toBeVisible()
 })

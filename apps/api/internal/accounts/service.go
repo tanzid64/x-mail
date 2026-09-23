@@ -298,7 +298,7 @@ func (s *Service) RefreshDomain(ctx context.Context, userID, domainID uuid.UUID)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.repo.SyncDomains(ctx, domain.MailAccountID, []providers.Domain{*remote}); err != nil {
+	if err := s.repo.UpsertDomain(ctx, domain.MailAccountID, *remote); err != nil {
 		return nil, err
 	}
 	return s.repo.GetDomain(ctx, userID, domainID)

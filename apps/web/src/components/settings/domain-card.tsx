@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useCreateAddress, useDeleteAddress, useRefreshDomain } from '@/features/accounts/api'
 import type { Domain, MailAddress } from '@/features/accounts/types'
 import { ApiError } from '@/lib/api'
+import { toast } from '@/lib/toast'
 
 interface DomainCardProps {
   domain: Domain
@@ -24,13 +25,25 @@ export function DomainCard({ domain, addresses }: DomainCardProps) {
   const [displayName, setDisplayName] = useState('')
   const [addressError, setAddressError] = useState<string | null>(null)
 
+  /** A recheck that changes nothing still has to say so, or it reads as a dead button. */
+  const reportRecheck = (checked: Domain) => {
+    if (checked.status === 'verified') {
+      toast.success(`${checked.domain} is verified.`)
+    } else if (checked.status === 'failed') {
+      toast.error(`${checked.domain} failed verification — check the DNS records below.`)
+    } else {
+      toast.info(`${checked.domain} is still pending. DNS changes can take a while to propagate.`)
+    }
+  }
+
   const onAddAddress = async (event: React.FormEvent) => {
     event.preventDefault()
     setAddressError(null)
     try {
-      await createAddress.mutateAsync({ email, display_name: displayName })
+      const created = await createAddress.mutateAsync({ email, display_name: displayName })
       setEmail('')
       setDisplayName('')
+      toast.success(`${created.email} can now send mail.`)
     } catch (error) {
       setAddressError(
         error instanceof ApiError
@@ -59,7 +72,7 @@ export function DomainCard({ domain, addresses }: DomainCardProps) {
           size="sm"
           className="gap-2"
           disabled={refresh.isPending}
-          onClick={() => refresh.mutate(domain.id)}
+          onClick={() => refresh.mutate(domain.id, { onSuccess: reportRecheck })}
         >
           {refresh.isPending ? (
             <Loader2 className="size-3.5 animate-spin" />
@@ -119,7 +132,11 @@ export function DomainCard({ domain, addresses }: DomainCardProps) {
                   size="icon"
                   aria-label={`Remove ${address.email}`}
                   disabled={deleteAddress.isPending}
-                  onClick={() => deleteAddress.mutate(address.id)}
+                  onClick={() =>
+                    deleteAddress.mutate(address.id, {
+                      onSuccess: () => toast.success(`${address.email} was removed.`),
+                    })
+                  }
                 >
                   <Trash2 className="size-4" />
                 </Button>
