@@ -1,6 +1,11 @@
 import type { ComponentType } from 'react'
 
+import { ApiAccountsPage } from '@/docs/pages/api-accounts'
+import { ApiAuthPage } from '@/docs/pages/api-auth'
+import { ApiEventsPage } from '@/docs/pages/api-events'
+import { ApiMailboxPage } from '@/docs/pages/api-mailbox'
 import { ApiOverviewPage } from '@/docs/pages/api-overview'
+import { ApiSendingPage } from '@/docs/pages/api-sending'
 import { ApiTokensPage } from '@/docs/pages/api-tokens'
 import { ComposePage } from '@/docs/pages/compose'
 import { ConfigurationPage } from '@/docs/pages/configuration'
@@ -110,6 +115,36 @@ export const DOC_SECTIONS: DocSection[] = [
         title: 'Overview',
         description: 'Base URL, authentication, errors, pagination and conventions.',
         component: ApiOverviewPage,
+      },
+      {
+        slug: 'api-auth',
+        title: 'Auth & tokens',
+        description: 'Signing in, the current user, and managing API tokens.',
+        component: ApiAuthPage,
+      },
+      {
+        slug: 'api-accounts',
+        title: 'Accounts & domains',
+        description: 'Mail accounts, their domains and their sender addresses.',
+        component: ApiAccountsPage,
+      },
+      {
+        slug: 'api-mailbox',
+        title: 'Mailbox',
+        description: 'Reading conversations, acting on them, and labels.',
+        component: ApiMailboxPage,
+      },
+      {
+        slug: 'api-sending',
+        title: 'Sending',
+        description: 'Drafts, attachments and handing a message to the provider.',
+        component: ApiSendingPage,
+      },
+      {
+        slug: 'api-events',
+        title: 'Events & webhooks',
+        description: 'The websocket, the provider callback, and health checks.',
+        component: ApiEventsPage,
       },
     ],
   },
