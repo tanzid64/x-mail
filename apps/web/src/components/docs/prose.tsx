@@ -163,7 +163,8 @@ export function Row({ children }: { children: ReactNode }) {
   return <tr className="align-top">{children}</tr>
 }
 
-export function Cell({ children, mono }: { children: ReactNode; mono?: boolean }) {
+/** `children` is optional: a blank cell is a legitimate thing for a table to have. */
+export function Cell({ children, mono }: { children?: ReactNode; mono?: boolean }) {
   return <td className={cn('px-4 py-2', mono && 'font-mono text-xs')}>{children}</td>
 }
 

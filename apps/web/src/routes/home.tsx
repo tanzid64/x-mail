@@ -58,7 +58,8 @@ function Hero() {
         <p className="mt-4 text-sm text-muted-foreground">
           Or{' '}
           <Link
-            to="/docs"
+            to="/docs/$page"
+            params={{ page: 'installation' }}
             className="font-medium text-foreground underline underline-offset-4"
           >
             run it on your own machine
@@ -243,7 +244,7 @@ function SelfHost() {
             your database.
           </p>
           <Button asChild variant="outline" className="mt-6 gap-2">
-            <Link to="/docs">
+            <Link to="/docs/$page" params={{ page: 'installation' }}>
               Installation guide
               <ArrowRight className="size-4" />
             </Link>
@@ -278,7 +279,7 @@ function Closing() {
             </Link>
           </Button>
           <Button asChild size="lg" variant="outline">
-            <Link to="/docs">
+            <Link to="/docs/$page" params={{ page: 'getting-started' }}>
               Getting started
             </Link>
           </Button>

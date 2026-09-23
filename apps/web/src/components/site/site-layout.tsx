@@ -78,7 +78,7 @@ export function SiteFooter() {
         <Link to="/docs" className="hover:text-foreground">
           Documentation
         </Link>
-        <Link to="/docs" className="hover:text-foreground">
+        <Link to="/docs/$page" params={{ page: 'installation' }} className="hover:text-foreground">
           Installation
         </Link>
         <Link to="/docs" className="hover:text-foreground">

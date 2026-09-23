@@ -1,5 +1,8 @@
 import type { ComponentType } from 'react'
 
+import { ConfigurationPage } from '@/docs/pages/configuration'
+import { GettingStartedPage } from '@/docs/pages/getting-started'
+import { InstallationPage } from '@/docs/pages/installation'
 import { OverviewPage } from '@/docs/pages/overview'
 
 export interface DocPage {
@@ -32,6 +35,34 @@ export const DOC_SECTIONS: DocSection[] = [
         title: 'Overview',
         description: 'What x-mail is, and the one idea the rest of it follows from.',
         component: OverviewPage,
+      },
+    ],
+  },
+  {
+    title: 'Installing',
+    pages: [
+      {
+        slug: 'installation',
+        title: 'Installation',
+        description: 'Getting the stack running, with Docker or on your own machine.',
+        component: InstallationPage,
+      },
+      {
+        slug: 'configuration',
+        title: 'Configuration',
+        description: 'Every environment variable, what it does and which are required.',
+        component: ConfigurationPage,
+      },
+    ],
+  },
+  {
+    title: 'Using x-mail',
+    pages: [
+      {
+        slug: 'getting-started',
+        title: 'Getting started',
+        description: 'From an empty inbox to a sent message, in four steps.',
+        component: GettingStartedPage,
       },
     ],
   },
