@@ -1,9 +1,13 @@
 import type { ComponentType } from 'react'
 
+import { ComposePage } from '@/docs/pages/compose'
 import { ConfigurationPage } from '@/docs/pages/configuration'
 import { GettingStartedPage } from '@/docs/pages/getting-started'
 import { InstallationPage } from '@/docs/pages/installation'
+import { MailAccountsPage } from '@/docs/pages/mail-accounts'
+import { MailboxPage } from '@/docs/pages/mailbox'
 import { OverviewPage } from '@/docs/pages/overview'
+import { ReceivingPage } from '@/docs/pages/receiving'
 
 export interface DocPage {
   /** URL slug. The overview is reached at /docs, everything else at /docs/<slug>. */
@@ -63,6 +67,30 @@ export const DOC_SECTIONS: DocSection[] = [
         title: 'Getting started',
         description: 'From an empty inbox to a sent message, in four steps.',
         component: GettingStartedPage,
+      },
+      {
+        slug: 'mail-accounts',
+        title: 'Mail accounts',
+        description: 'Connecting providers, verifying domains and adding sender addresses.',
+        component: MailAccountsPage,
+      },
+      {
+        slug: 'mailbox',
+        title: 'The mailbox',
+        description: 'Folders, reading, organising, and what updates on its own.',
+        component: MailboxPage,
+      },
+      {
+        slug: 'compose',
+        title: 'Writing and sending',
+        description: 'Drafts, attachments, replies, and what happens after you press send.',
+        component: ComposePage,
+      },
+      {
+        slug: 'receiving',
+        title: 'Receiving mail',
+        description: 'Pointing your provider at x-mail, and what happens when mail arrives.',
+        component: ReceivingPage,
       },
     ],
   },
