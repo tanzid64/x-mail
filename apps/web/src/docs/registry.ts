@@ -4,6 +4,7 @@ import { ApiAccountsPage } from '@/docs/pages/api-accounts'
 import { ApiAuthPage } from '@/docs/pages/api-auth'
 import { ApiEventsPage } from '@/docs/pages/api-events'
 import { ApiMailboxPage } from '@/docs/pages/api-mailbox'
+import { ApiMcpPage } from '@/docs/pages/api-mcp'
 import { ApiOverviewPage } from '@/docs/pages/api-overview'
 import { ApiSendingPage } from '@/docs/pages/api-sending'
 import { ApiTokensPage } from '@/docs/pages/api-tokens'
@@ -142,6 +143,12 @@ export const DOC_SECTIONS: DocSection[] = [
         title: 'Sending',
         description: 'Drafts, attachments and handing a message to the provider.',
         component: ApiSendingPage,
+      },
+      {
+        slug: 'api-mcp',
+        title: 'MCP for AI assistants',
+        description: 'Connecting an assistant so it can read mail and draft replies — but not send.',
+        component: ApiMcpPage,
       },
       {
         slug: 'api-events',

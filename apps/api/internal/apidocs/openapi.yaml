@@ -94,6 +94,10 @@ tags:
     description: Composing and sending.
   - name: Attachments
     description: Files on a draft or a received message.
+  - name: MCP
+    description: |
+      Model Context Protocol, for AI assistants. Reads mail and writes drafts;
+      deliberately cannot send.
   - name: Realtime
     description: The websocket that tells a client what changed.
   - name: Webhooks
@@ -491,6 +495,66 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/TokenRefused" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─────────────────────────────────────────────────────────────── mcp ──
+  /mcp:
+    post:
+      tags: [MCP]
+      summary: Model Context Protocol endpoint
+      description: |
+        Streamable HTTP transport for MCP, so an AI assistant can read a mailbox
+        and write drafts in it. JSON-RPC 2.0 over `POST`; the session is
+        stateless, so there is no stream to `GET` and no session to `DELETE`.
+
+        **API token only.** A session cookie is refused here: MCP is a machine
+        interface, so a browser cookie reaching it is either a confused client
+        or a cross-site request. Revoking the token is therefore the complete
+        answer to "stop that assistant".
+
+        The tools it exposes read mail and write drafts. **Nothing sends**, and
+        nothing deletes — a human presses send in the interface. An assistant
+        that reads untrusted email and can also send it is one convincing
+        instruction away from sending mail on the reader's behalf.
+
+        A token limited to one mail account limits the assistant to that
+        mailbox, through the same SQL predicate as everything else.
+      security:
+        - apiToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: A JSON-RPC 2.0 request — `initialize`, `tools/list`, `tools/call` or `ping`.
+              required: [jsonrpc, method]
+              properties:
+                jsonrpc: { type: string, enum: ["2.0"] }
+                id: { type: [string, integer] }
+                method: { type: string, examples: ["tools/list"] }
+                params: { type: object }
+      responses:
+        "200":
+          description: The JSON-RPC response.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jsonrpc: { type: string }
+                  id: { type: [string, integer] }
+                  result: { type: object }
+                  error:
+                    type: object
+                    description: Present instead of `result` when the call could not be made at all.
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401":
+          description: |
+            No API token, or one that is invalid, expired or revoked. A session
+            cookie also lands here.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
 
   # ────────────────────────────────────────────────────── mail accounts ──
   /mail-accounts:

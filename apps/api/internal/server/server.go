@@ -23,6 +23,7 @@ import (
 	"github.com/dark/x-mail/api/internal/httpx"
 	"github.com/dark/x-mail/api/internal/mailbox"
 	"github.com/dark/x-mail/api/internal/mailer"
+	"github.com/dark/x-mail/api/internal/mcpserver"
 	"github.com/dark/x-mail/api/internal/ratelimit"
 	"github.com/dark/x-mail/api/internal/realtime"
 	"github.com/dark/x-mail/api/internal/server/middleware"
@@ -55,6 +56,7 @@ type Server struct {
 	accounts *accounts.Handler
 	mailbox  *mailbox.Handler
 	compose  *compose.Handler
+	mcp      *mcpserver.Server
 	webhooks *webhooks.Handler
 	hub      *realtime.Hub
 }
@@ -96,10 +98,8 @@ func New(deps Deps) (*Server, error) {
 
 	accountsRepo := accounts.NewRepository(deps.DB)
 
-	accountsHandler := accounts.NewHandler(
-		accounts.NewService(accountsRepo, sealer, providerFactory, deps.Logger),
-		deps.Logger,
-	)
+	accountsService := accounts.NewService(accountsRepo, sealer, providerFactory, deps.Logger)
+	accountsHandler := accounts.NewHandler(accountsService, deps.Logger)
 
 	publisher := realtime.NewPublisher(deps.Redis, deps.Logger)
 
@@ -131,10 +131,17 @@ func New(deps Deps) (*Server, error) {
 		queue = worker.NewEnqueuer(cfg.RedisAddr, cfg.RedisPassword, cfg.RedisDB)
 	}
 
-	composeHandler := compose.NewHandler(
-		compose.NewService(compose.NewRepository(deps.DB), store, queue, deps.Logger),
-		deps.Logger,
-	)
+	composeService := compose.NewService(compose.NewRepository(deps.DB), store, queue, deps.Logger)
+	composeHandler := compose.NewHandler(composeService, deps.Logger)
+
+	// MCP shares the services rather than building its own, so an assistant
+	// goes through exactly the same authorization as an HTTP request.
+	mcpSrv := mcpserver.New(mcpserver.Deps{
+		Accounts: accountsService,
+		Mailbox:  mailboxService,
+		Compose:  composeService,
+		Logger:   deps.Logger,
+	})
 
 	// The webhook enqueuer is the same client the compose service uses, but
 	// typed for the event task.
@@ -161,6 +168,7 @@ func New(deps Deps) (*Server, error) {
 		accounts: accountsHandler,
 		mailbox:  mailboxHandler,
 		compose:  composeHandler,
+		mcp:      mcpSrv,
 		webhooks: webhooksHandler,
 		hub:      hub,
 	}
@@ -232,6 +240,15 @@ func (s *Server) setupRoutes() {
 
 			// Token management is behind RequireSession inside RoutesAPITokens:
 			// reachable with a session, never with a token.
+			// MCP: the same middleware, services and SQL as the REST API, so an
+			// assistant is authorized exactly as a script is. Token-only —
+			// a browser cookie reaching a machine interface is either a
+			// confused client or a cross-site request.
+			// POST only: the transport is stateless, so there is no SSE stream to
+			// GET and no session to DELETE. Registering the rest would put seven
+			// methods in the route table that all answer 405 anyway.
+			r.With(mcpserver.RequireAPIToken).Post("/mcp", s.mcp.Handler().ServeHTTP)
+
 			r.Route("/api-tokens", s.auth.RoutesAPITokens)
 
 			r.Route("/mail-accounts", s.accounts.RoutesAccounts)
