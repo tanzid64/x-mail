@@ -49,6 +49,14 @@ export function SettingsApiTokensPage() {
             >
               Try endpoints interactively
             </a>
+            , or{' '}
+            <Link
+              to="/docs/$page"
+              params={{ page: 'api-mcp' }}
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              connect an AI assistant over MCP
+            </Link>
             .
           </p>
         </div>

@@ -70,6 +70,15 @@ expensive to undo, so treat them as fixed unless the user says otherwise.
 mail account carries its own provider credentials and its own mailbox. Never add a `user_id`
 column to mailbox tables — ownership is always resolved through `mail_account_id`.
 
+**MCP tools must never gain the ability to send or destroy.** `internal/mcpserver` exposes x-mail
+to AI assistants; it reads mail and writes drafts, and that boundary is the security model, not a
+preference. Message bodies are untrusted input that lands in a model's context, so the mitigations
+(server instructions, tool descriptions, a warning beside each body) are defence in depth — the
+actual guarantee is that no tool sends, deletes, or reaches provider credentials. It authenticates
+by API token only and shares the domain services, so token expiry, revocation and per-account
+limits apply without this package implementing any of them. Adding a tool means adding a test to
+`internal/server/mcp_test.go`.
+
 **There are two references, and both must be updated with the route.** The written guide lives
 in `apps/web/src/docs/pages/api-*.tsx` and is what people read; it never mentions Swagger, because
 it has to stand on its own. `internal/server/guide_test.go` fails the build when an endpoint has no

@@ -130,6 +130,16 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] Written API reference covering all 51 integrator-facing endpoints
 - [x] Tests pinning the written guide to the route table
 
+## Phase 7.7 — MCP (AI assistants)
+
+- [x] MCP server at `POST /api/v1/mcp`, Streamable HTTP, stateless
+- [x] API-token authentication; session cookies refused
+- [x] Nine tools — read mail, read and write drafts
+- [x] No tool sends, deletes, or touches credentials
+- [x] Prompt-injection handling: instructions, tool description, per-response warning
+- [x] Per-account token limits apply through the existing SQL predicate
+- [x] Documented at `/docs/api-mcp`
+
 ## Phase 8 — Advanced Accounts
 
 - [ ] Unified inbox (all accounts)
@@ -244,3 +254,9 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 65 | Doc pages are components over prose primitives, not Markdown | A code block gets a copy button and a callout a tone, without adding a Markdown pipeline and a syntax highlighter to a bundle that is otherwise a mail client |
 | 66 | The written guide never mentions Swagger | Swagger is for poking at endpoints; the guide has to stand on its own for a reader who never opens it. The two Swagger routes are explicitly excluded from the coverage test, with a reason |
 | 67 | Three Go tests pin the guide to the OpenAPI document, which is pinned to the router | Undocumented endpoint, imaginary endpoint, and stale exclusion all fail the build. A stale exemption is its own drift — it means the next person to delete an endpoint gets no warning |
+| 68 | MCP is mounted inside the API, not run as its own process | A tool call then goes through the same middleware, services and SQL as the equivalent HTTP request. A separate process would be a second authorization path to keep in step with the first |
+| 69 | MCP accepts an API token and refuses session cookies | It is a machine interface; a browser cookie reaching it is a confused client or a cross-site request. It also makes "revoke the token" the complete answer to "stop that assistant" |
+| 70 | No MCP tool sends, deletes, or reaches credentials | An assistant that reads untrusted email and can also send it is one convincing instruction away from sending as the reader. The worst a successful injection achieves is a draft the user will see |
+| 71 | Injection is answered in three places, and none of them is the real answer | Server instructions, the `get_thread` description, and a warning beside the bodies. Prompting is mitigation, not a guarantee — which is why the dangerous tools simply do not exist |
+| 72 | `get_thread` never marks mail read, and returns text not HTML | An assistant looking through an inbox must not clear its unread badges; raw HTML wastes model context and carries whatever the sender hid in it |
+| 73 | The official MCP Go SDK rather than a hand-rolled protocol | Protocol correctness is the whole point of "works with any provider". Version negotiation and transport framing are not worth reinventing for six new modules, four of which the graph already carried |

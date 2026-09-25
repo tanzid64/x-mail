@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 import {
   ArrowRight,
   AtSign,
+  Bot,
   KeyRound,
   Layers,
   Lock,
@@ -161,6 +162,11 @@ const FEATURES = [
     icon: KeyRound,
     title: 'Everything is an API',
     body: 'Every screen is built on the same public API. Create a token and a script can do whatever you can do.',
+  },
+  {
+    icon: Bot,
+    title: 'AI assistants, on a short leash',
+    body: 'Connect an assistant over MCP to read mail and draft replies. It cannot send, delete, or reach your credentials — there are no tools for it.',
   },
 ]
 
