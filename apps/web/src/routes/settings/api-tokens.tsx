@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { BookOpen, CircleAlert, KeyRound, Trash2 } from 'lucide-react'
 
 import { CreateTokenDialog } from '@/components/settings/create-token-dialog'
@@ -39,16 +40,26 @@ export function SettingsApiTokensPage() {
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
               Authorization: Bearer …
             </code>
+            .{' '}
+            <a
+              href="/api/v1/docs"
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-4 hover:text-foreground"
+            >
+              Try endpoints interactively
+            </a>
             .
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {/* Served by the API itself, so it always describes this build. */}
+          {/* The written guide first: Swagger is for poking at endpoints, not
+              for learning what they mean. */}
           <Button asChild variant="outline" className="gap-2">
-            <a href="/api/v1/docs" target="_blank" rel="noreferrer">
+            <Link to="/docs/$page" params={{ page: 'api' }}>
               <BookOpen className="size-4" />
               API reference
-            </a>
+            </Link>
           </Button>
           <CreateTokenDialog />
         </div>

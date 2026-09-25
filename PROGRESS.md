@@ -121,6 +121,15 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 - [x] OpenAPI 3.1 document + Swagger UI at `/api/v1/docs`
 - [x] Tests that fail when the spec and the router drift apart
 
+## Phase 7.6 — Public site & documentation
+
+- [x] Public home page at `/` (redirects a signed-in visitor to their inbox)
+- [x] Documentation site at `/docs`, readable signed out
+- [x] Installation + configuration guide
+- [x] Interface guide — accounts, mailbox, compose, receiving
+- [x] Written API reference covering all 51 integrator-facing endpoints
+- [x] Tests pinning the written guide to the route table
+
 ## Phase 8 — Advanced Accounts
 
 - [ ] Unified inbox (all accounts)
@@ -230,3 +239,8 @@ Legend: `[ ]` not started · `[~]` in progress · `[x]` done and verified
 | 60 | The spec is embedded in the binary and served at `/api/v1/openapi.yaml` | A deployed build then serves the description of *itself* rather than of whatever was last generated and committed |
 | 61 | Swagger UI loads from a CDN rather than vendoring ~3 MB of assets | The only part of the service needing the public internet; a locked-down deployment can still consume the raw spec |
 | 62 | Docs are public, outside the auth middleware | An API meant for third parties that hides its own description is not much use to them, and the document contains no secrets |
+| 63 | `/` is a public home page; a signed-in visitor is redirected to their inbox | There was nowhere to send someone who has not decided to sign up, but someone who bookmarked the root wants their mail, not the pitch |
+| 64 | Documentation pages are a registry, not a route each | The sidebar, the previous/next links and the URL all read one list, so a page cannot be in the navigation without existing, or exist without appearing |
+| 65 | Doc pages are components over prose primitives, not Markdown | A code block gets a copy button and a callout a tone, without adding a Markdown pipeline and a syntax highlighter to a bundle that is otherwise a mail client |
+| 66 | The written guide never mentions Swagger | Swagger is for poking at endpoints; the guide has to stand on its own for a reader who never opens it. The two Swagger routes are explicitly excluded from the coverage test, with a reason |
+| 67 | Three Go tests pin the guide to the OpenAPI document, which is pinned to the router | Undocumented endpoint, imaginary endpoint, and stale exclusion all fail the build. A stale exemption is its own drift — it means the next person to delete an endpoint gets no warning |

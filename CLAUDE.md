@@ -70,6 +70,12 @@ expensive to undo, so treat them as fixed unless the user says otherwise.
 mail account carries its own provider credentials and its own mailbox. Never add a `user_id`
 column to mailbox tables — ownership is always resolved through `mail_account_id`.
 
+**There are two references, and both must be updated with the route.** The written guide lives
+in `apps/web/src/docs/pages/api-*.tsx` and is what people read; it never mentions Swagger, because
+it has to stand on its own. `internal/server/guide_test.go` fails the build when an endpoint has no
+`<Endpoint>` entry, when an entry names an endpoint that does not exist, or when an exclusion in
+`notInTheGuide` outlives its endpoint. Doc pages are registered in `apps/web/src/docs/registry.ts`.
+
 **The OpenAPI document is hand-written and must be updated with the route.**
 `apps/api/internal/apidocs/openapi.yaml` is embedded in the binary and served at `/api/v1/openapi.yaml`,
 with Swagger UI at `/api/v1/docs`. Two tests in `internal/server/openapi_test.go` walk the real

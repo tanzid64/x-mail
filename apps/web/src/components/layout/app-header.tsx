@@ -1,5 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { LogOut, Search, User as UserIcon } from 'lucide-react'
+import { BookOpen, LogOut, Search, User as UserIcon } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -61,6 +61,12 @@ export function AppHeader({ user }: AppHeaderProps) {
               <Link to="/settings/accounts">
                 <UserIcon className="size-4" />
                 Settings
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to="/docs">
+                <BookOpen className="size-4" />
+                Documentation
               </Link>
             </DropdownMenuItem>
             <DropdownMenuSeparator />
