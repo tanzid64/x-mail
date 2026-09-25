@@ -16,9 +16,18 @@ async function register(page: import('@playwright/test').Page, account: ReturnTy
 }
 
 test('signed-out visitors are sent to sign in, keeping where they were headed', async ({ page }) => {
-  await page.goto('/')
+  // A protected route, not "/": the root is the public home page now, so it is
+  // no longer the thing that redirects.
+  await page.goto('/settings/accounts')
   await expect(page).toHaveURL(/\/login\?redirect=/)
+  await expect(page).toHaveURL(/settings/)
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible()
+})
+
+test('the root is the home page when signed out, not a redirect to sign in', async ({ page }) => {
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('One mailbox')
 })
 
 test('a new account can register, browse folders, sign out and sign back in', async ({ page }) => {

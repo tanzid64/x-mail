@@ -111,9 +111,12 @@ export const DOC_SECTIONS: DocSection[] = [
     title: 'API',
     pages: [
       {
+        // Not "Overview": the introduction already has one, and two identically
+        // named links in one sidebar are ambiguous to read and to announce.
         slug: 'api',
-        title: 'Overview',
-        description: 'Base URL, authentication, errors, pagination and conventions.',
+        title: 'Conventions',
+        description:
+          'Base URL, authentication, errors, pagination — and a worked example end to end.',
         component: ApiOverviewPage,
       },
       {
